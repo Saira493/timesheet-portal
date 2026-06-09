@@ -1,0 +1,240 @@
+import streamlit as st
+import mysql.connector
+import pandas as pd
+import holidays
+from datetime import datetime, timedelta
+
+# --- PAGE CONFIGURATION ---
+st.set_page_config(page_title="Timesheet Portal", page_icon="📅", layout="wide")
+
+# --- DATABASE CONNECTION FUNCTION ---
+def get_db_connection():
+    try:
+        conn = mysql.connector.connect(
+            host=st.secrets["db_host"],
+            port=int(st.secrets["db_port"]),
+            user=st.secrets["db_user"],
+            password=st.secrets["db_password"],
+            database=st.secrets["db_name"]
+        )
+        return conn
+    except mysql.connector.Error as err:
+        st.error(f"❌ Database Connection Error: {err}")
+        return None
+
+# --- PAYROLL FILTER HELPERS ---
+def calculate_billable_status(input_date):
+    if isinstance(input_date, str):
+        dt = datetime.strptime(input_date, "%Y-%m-%d").date()
+    elif isinstance(input_date, datetime):
+        dt = input_date.date()
+    else:
+        dt = input_date
+
+    if dt.weekday() in [5, 6]:
+        return False, "Weekend"
+        
+    uk_holidays = holidays.UnitedKingdom(subdiv='England', years=dt.year)
+    if dt in uk_holidays:
+        return False, f"Bank Holiday ({uk_holidays.get(dt)})"
+        
+    return True, "Payable Workday"
+
+# --- SESSION STATE INITIALIZATION ---
+if "current_role" not in st.session_state:
+    st.session_state.current_role = "NONE"
+
+# ==========================================
+# SCREEN 1: IDENTITY SETUP (HOME SCREEN)
+# ==========================================
+if st.session_state.current_role == "NONE":
+    left_space, center_card, right_space = st.columns([1, 2, 1])
+    
+    with center_card:
+        st.write("")
+        st.write("")
+        st.markdown("<h1 style='text-align: center;'>Identity Setup</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray;'>Choose your role in the company to get started.</p>", unsafe_allow_html=True)
+        st.write("")
+        
+        with st.container(border=True):
+            col1, col2 = st.columns([1, 5])
+            with col1:
+                st.markdown("### 🛡️")
+            with col2:
+                st.markdown("**The Boss**")
+                st.markdown("<span style='color: gray; font-size: 14px;'>View all employee records, counts, and payroll audit tracking pages.</span>", unsafe_allow_html=True)
+            
+            if st.button("Select as Boss", key="btn_boss", use_container_width=True):
+                st.session_state.current_role = "BOSS"
+                st.rerun()
+
+        st.write("")
+
+        with st.container(border=True):
+            col1, col2 = st.columns([1, 5])
+            with col1:
+                st.markdown("### 👤")
+            with col2:
+                st.markdown("**Employee**")
+                st.markdown("<span style='color: gray; font-size: 14px;'>Log your daily work locations and submit timesheets seamlessly.</span>", unsafe_allow_html=True)
+                
+            if st.button("Select as Employee", key="btn_emp", use_container_width=True):
+                st.session_state.current_role = "EMPLOYEE"
+                st.rerun()
+
+# ==========================================
+# SCREEN 2: EMPLOYEE TIMESHEET FORM
+# ==========================================
+elif st.session_state.current_role == "EMPLOYEE":
+    left_space, center_content, right_space = st.columns([1, 3, 1])
+    
+    with center_content:
+        col_title, col_logout = st.columns([4, 1])
+        with col_title:
+            st.title("📝 Employee Entry Workspace")
+        with col_logout:
+            if st.button("↩️ Change Role", use_container_width=True):
+                st.session_state.current_role = "NONE"
+                st.rerun()
+                
+        st.markdown("---")
+        
+        employee_name = st.text_input("👤 Your Full Name:", value="Sara")
+        
+        locations_list = ["Alkhair", "Eva", "Primary School", "Secondary School", "Office", "Fedilis"]
+        location = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
+        
+        st.write("📅 **Select Date Range Worked:**")
+        date_range = st.date_input(
+            "Click to choose start and end dates:",
+            value=[datetime.now().date(), datetime.now().date() + timedelta(days=2)]
+        )
+
+        st.markdown("---")
+
+        if st.button("Process & Submit Timesheet", type="primary", use_container_width=True):
+            if not employee_name.strip():
+                st.error("⚠️ Please fill in your name.")
+            elif len(date_range) != 2:
+                st.warning("ℹ️ Please select both a Start Date and an End Date.")
+            else:
+                start_date, end_date = date_range[0], date_range[1]
+                delta = end_date - start_date
+                generated_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
+                
+                conn = get_db_connection()
+                if conn:
+                    try:
+                        cursor = conn.cursor()
+                        success_count = 0
+                        for single_date in generated_dates:
+                            query = """
+                            INSERT INTO daily_records (employee_name, work_date, location)
+                            VALUES (%s, %s, %s)
+                            ON DUPLICATE KEY UPDATE location = VALUES(location);
+                            """
+                            cursor.execute(query, (employee_name.strip(), single_date, location))
+                            success_count += 1
+                            
+                        conn.commit()
+                        st.success(f"🎉 Successfully logged {success_count} days for {employee_name} at {location}!")
+                        st.balloons()
+                    except mysql.connector.Error as err:
+                        st.error(f"❌ Database error: {err}")
+                    finally:
+                        cursor.close()
+                        conn.close()
+
+# ==========================================
+# SCREEN 3: THE BOSS MONITORING DASHBOARD
+# ==========================================
+elif st.session_state.current_role == "BOSS":
+    col_title, col_logout = st.columns([5, 1])
+    with col_title:
+        st.title("💼 Enterprise Labor Management Dashboard")
+        st.subheader("UK Multi-Site Operations Overview & Payroll Audit")
+    with col_logout:
+        if st.button("↩️ Change Role", use_container_width=True):
+            st.session_state.current_role = "NONE"
+            st.rerun()
+            
+    st.markdown("---")
+    
+    records = []
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT employee_name, work_date, location FROM daily_records ORDER BY work_date DESC")
+            records = cursor.fetchall()
+        except mysql.connector.Error as err:
+            st.error(f"⚠️ Could not pull entries table: {err}")
+        finally:
+            cursor.close()
+            conn.close()
+            
+    if not records:
+        st.info("📂 No logged timesheets found in your live database tables yet.")
+    else:
+        df = pd.DataFrame(records)
+        df['work_date'] = pd.to_datetime(df['work_date']).dt.date
+        df['Month_Year'] = pd.to_datetime(df['work_date']).dt.strftime('%B %Y')
+        
+        status_results = df['work_date'].apply(calculate_billable_status)
+        df['Is Payable'] = [res[0] for res in status_results]
+        df['Day Categorization'] = [res[1] for res in status_results]
+        
+        st.markdown("### 🔍 Filter Work Records")
+        filter_col1, filter_col2 = st.columns(2)
+        
+        with filter_col1:
+            unique_employees = sorted(list(df['employee_name'].unique()))
+            selected_emp = st.selectbox("1. Select an Employee:", unique_employees)
+            
+        with filter_col2:
+            emp_months = df[df['employee_name'] == selected_emp]['Month_Year'].unique()
+            selected_month = st.selectbox("2. Choose Pay-Period Month:", sorted(list(emp_months)))
+            
+        st.markdown("---")
+        
+        if selected_emp and selected_month:
+            filtered_df = df[(df['employee_name'] == selected_emp) & (df['Month_Year'] == selected_month)]
+            payable_df = filtered_df[filtered_df['Is Payable'] == True]
+            
+            summary_df = payable_df.groupby('location').size().reset_index(name='Payable Days')
+            summary_df.columns = ['UK Work Location Site', 'Total Days Owed Pay']
+            
+            total_days_logged = len(filtered_df)
+            total_payable_days = summary_df['Total Days Owed Pay'].sum()
+            total_excluded_days = total_days_logged - total_payable_days
+            
+            st.markdown(f"### 📊 Breakdown for {selected_emp} during **{selected_month}**")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("📅 Total Days Logged", f"{total_days_logged} Days")
+            m2.metric("💰 Approved Payable Days", f"{total_payable_days} Days")
+            m3.metric("🛑 Excluded (Weekends / Holidays)", f"{total_excluded_days} Days")
+            
+            st.write("")
+            
+            st.markdown("#### **Approved Payroll Summary Table**")
+            if not summary_df.empty:
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            else:
+                st.warning(f"This staff user has 0 payable days within the selection parameter month.")
+                
+            csv = filtered_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download This Filtered Report to CSV",
+                data=csv,
+                file_name=f"payroll_{selected_emp.replace(' ', '_')}_{selected_month.replace(' ', '_')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+            
+            st.write("")
+            
+            with st.expander("🔍 In-Depth Shift Audit Log (View Classification Breakdown)"):
+                audit_display_df = filtered_df[['work_date', 'location', 'Day Categorization', 'Is Payable']].copy()
+                audit_display_df.columns = ['Calendar Date', 'Location Site', 'Payroll Classification', 'Paid Status']
+                st.dataframe(audit_display_df, use_container_width=True, hide_index=True)
