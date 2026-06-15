@@ -117,11 +117,12 @@ elif st.session_state.current_role == "EMPLOYEE":
             "Other (Type Below)"
         ]
         
-        selected_dropdown = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
+        # --- PRIMARY SHIFT BLOCK ---
+        selected_dropdown = st.selectbox("📍 Select Your Work Location Site:", options=locations_list, key="primary_loc")
         
         final_location = ""
         if selected_dropdown == "Other (Type Below)":
-            final_location = st.text_input("✏️ Type Your Custom Work Location Site:", value="").strip()
+            final_location = st.text_input("✏️ Type Your Custom Work Location Site:", value="", key="primary_custom").strip()
         else:
             final_location = selected_dropdown
         
@@ -132,65 +133,64 @@ elif st.session_state.current_role == "EMPLOYEE":
             key="bulk_date"
         )
         
+        # --- ADDITIONAL SHIFT BLOCK (IN A SINGLE LINE BELOW) ---
         st.markdown("---")
         
-        # ---------------------------------------------------------
-        # MANUAL OVERRIDE ASSIGNMENT BLOCK FOR WEEKENDS / EXTRA SHIFTS
-        # ---------------------------------------------------------
-        st.markdown("### ➕ Add Extra Manual Shifts")
-        st.caption("If you need to submit extra dates outside the range or on weekends, select them here:")
+        # Using a checkbox to keep the optional extra workspace clean
+        has_additional = st.checkbox("➕ Add an extra location and date range", value=False)
         
-        if "manual_shifts" not in st.session_state:
-            st.session_state.manual_shifts = []
+        final_additional_location = ""
+        additional_date_range = None
+        
+        if has_additional:
+            st.markdown("#### **Additional Shift Block**")
+            # Create a 2-column layout to place Location and Dates side-by-side
+            add_col1, add_col2 = st.columns(2)
             
-        col_m_date, col_m_loc = st.columns(2)
-        with col_m_date:
-            manual_date = st.date_input("Select Extra Date:", value=datetime.now().date(), key="manual_date_picker")
-        with col_m_loc:
-            manual_loc_dropdown = st.selectbox("Assign Location to Extra Date:", options=locations_list, key="manual_loc_select")
-            
-        final_manual_loc = ""
-        if manual_loc_dropdown == "Other (Type Below)":
-            final_manual_loc = st.text_input("✏️ Type Custom Location for Extra Date:", value="", key="manual_loc_custom").strip()
-        else:
-            final_manual_loc = manual_loc_dropdown
-            
-        if st.button("➕ Add Manual Date Override", width="stretch"):
-            if manual_loc_dropdown == "Select the Location" or (manual_loc_dropdown == "Other (Type Below)" and not final_manual_loc):
-                st.error("⚠️ Please assign a valid location for your extra manual entry.")
-            else:
-                # Remove duplicate date from custom tracking if it already exists
-                st.session_state.manual_shifts = [item for item in st.session_state.manual_shifts if item['date'] != manual_date]
-                st.session_state.manual_shifts.append({"date": manual_date, "location": final_manual_loc})
-                st.toast(f"✅ Added {manual_date} to your manual overrides list!")
-                
-        # Display appended manual entries if present
-        if st.session_state.manual_shifts:
-            st.markdown("#### **Pending Extra Shifts to Add:**")
-            for idx, item in enumerate(st.session_state.manual_shifts):
-                c_text, c_btn = st.columns([5, 1])
-                with c_text:
-                    st.markdown(f"⭐ **{item['date']}** ({item['date'].strftime('%A')}) — Site: *{item['location']}*")
-                with c_btn:
-                    if st.button("❌ Remove", key=f"rem_m_{idx}"):
-                        st.session_state.manual_shifts.pop(idx)
-                        st.rerun()
-
+            with add_col1:
+                additional_dropdown = st.selectbox("📍 Select Additional Work Location:", options=locations_list, key="add_loc")
+                if additional_dropdown == "Other (Type Below)":
+                    final_additional_location = st.text_input("✏️ Type Custom Additional Location:", value="", key="add_custom").strip()
+                else:
+                    final_additional_location = additional_dropdown
+                    
+            with add_col2:
+                additional_date_range = st.date_input(
+                    "📅 Select Additional Date Range Worked:",
+                    value=[datetime.now().date(), datetime.now().date() + timedelta(days=2)],
+                    key="add_date"
+                )
+        
         st.markdown("---")
 
         if st.button("Process & Submit Timesheet", type="primary", width="stretch"):
             if not employee_name.strip() or employee_name == "Enter your name":
                 st.error("⚠️ Please fill in your name.")
             elif selected_dropdown == "Select the Location":
-                st.error("⚠️ Please select a valid work location.")
+                st.error("⚠️ Please select a valid primary work location.")
             elif selected_dropdown == "Other (Type Below)" and not final_location:
-                st.error("⚠️ Please type your custom location name in the text box.")
+                st.error("⚠️ Please type your custom primary location name in the text box.")
             elif not isinstance(date_range, list) or len(date_range) != 2:
-                st.warning("ℹ️ Please select both a Start Date and an End Date.")
+                st.warning("ℹ️ Please select both a Start Date and an End Date for your primary range.")
+            # Validation steps for the optional field if active
+            elif has_additional and additional_dropdown == "Select the Location":
+                st.error("⚠️ Please select a valid location for your additional shift block.")
+            elif has_additional and additional_dropdown == "Other (Type Below)" and not final_additional_location:
+                st.error("⚠️ Please type your custom additional location name in the text box.")
+            elif has_additional and (not isinstance(additional_date_range, list) or len(additional_date_range) != 2):
+                st.warning("ℹ️ Please select both a Start Date and an End Date for your additional range.")
             else:
+                # 1. Generate dates for Primary Range
                 start_date, end_date = date_range[0], date_range[1]
                 delta = end_date - start_date
                 generated_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
+                
+                # 2. Generate dates for Additional Range if selected
+                additional_dates = []
+                if has_additional:
+                    add_start, add_end = additional_date_range[0], additional_date_range[1]
+                    add_delta = add_end - add_start
+                    additional_dates = [add_start + timedelta(days=i) for i in range(add_delta.days + 1)]
                 
                 conn = get_db_connection()
                 if conn:
@@ -198,7 +198,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                         cursor = conn.cursor()
                         success_count = 0
                         
-                        # 1. Process Main Date Range (Strictly skips weekends automatically)
+                        # Process Main Date Range (Skips weekends automatically)
                         for single_date in generated_dates:
                             if single_date.weekday() in [5, 6]:
                                 continue
@@ -211,26 +211,28 @@ elif st.session_state.current_role == "EMPLOYEE":
                             cursor.execute(query, (employee_name.strip(), single_date, final_location))
                             success_count += 1
                             
-                        # 2. Process Extra Manual Shifts (Allows weekends/custom entries perfectly)
-                        for manual_item in st.session_state.manual_shifts:
-                            query = """
-                            INSERT INTO daily_records (employee_name, work_date, location)
-                            VALUES (%s, %s, %s)
-                            ON DUPLICATE KEY UPDATE location = VALUES(location);
-                            """
-                            cursor.execute(query, (employee_name.strip(), manual_item['date'], manual_item['location']))
-                            success_count += 1
-                            
+                        # Process Additional Date Range if active (Skips weekends automatically)
+                        if has_additional:
+                            for single_date in additional_dates:
+                                if single_date.weekday() in [5, 6]:
+                                    continue
+                                    
+                                query = """
+                                INSERT INTO daily_records (employee_name, work_date, location)
+                                VALUES (%s, %s, %s)
+                                ON DUPLICATE KEY UPDATE location = VALUES(location);
+                                """
+                                cursor.execute(query, (employee_name.strip(), single_date, final_additional_location))
+                                success_count += 1
+                                
                         conn.commit()
-                        st.success(f"🎉 Successfully logged {success_count} days for {employee_name} into your live data pools!")
+                        st.success(f"🎉 Successfully logged {success_count} total days for {employee_name} into your live data pools!")
                         st.balloons()
-                        st.session_state.manual_shifts = []  # Reset manual override list buffer on successful post
                     except mysql.connector.Error as err:
                         st.error(f"❌ Database error: {err}")
                     finally:
                         cursor.close()
                         conn.close()
-
 # ==========================================
 # SCREEN 3: THE BOSS MONITORING DASHBOARD
 # ==========================================
