@@ -112,6 +112,8 @@ elif st.session_state.current_role == "EMPLOYEE":
         location = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
 
        # 2. Conditional input field: Appears only if "Other (Type Below)" is chosen
+       
+        selected_dropdown = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
         final_location = ""
         if selected_dropdown == "Other (Type Below)":
             final_location = st.text_input("✏️ Type Your Custom Work Location Site:", value="").strip()
