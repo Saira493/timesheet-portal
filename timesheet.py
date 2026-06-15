@@ -100,9 +100,9 @@ elif st.session_state.current_role == "EMPLOYEE":
                 
         st.markdown("---")
         
-        employee_name = st.text_input("👤 Your Full Name:", value="Sara")
+        employee_name = st.text_input("👤 Your Full Name:", value="Enter your name")
         
-        locations_list = ["Al-Khair Foundation", "Al-Khair Schools", "BizAv Media Ltd", "Saks London", "Photocopiers Direct", "EVA International", "Fidelis College", "IQRA ELM", "Heretoga", "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy", "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM", ""]
+        locations_list = ["Select the Location", Al-Khair Foundation", "Al-Khair Schools", "BizAv Media Ltd", "Saks London", "Photocopiers Direct", "EVA International", "Fidelis College", "IQRA ELM", "Heretoga", "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy", "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM", ""]
         location = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
         
         st.write("📅 **Select Date Range Worked:**")
