@@ -108,9 +108,16 @@ elif st.session_state.current_role == "EMPLOYEE":
         
         employee_name = st.text_input("👤 Your Full Name:", value="Enter your name")
         
-        locations_list = ["Al-Khair Foundation", "Al-Khair Schools", "BizAv Media Ltd", "Saks London", "Photocopiers Direct", "EVA International", "Fidelis College", "IQRA ELM", "Heretoga", "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy", "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM"]
+        locations_list = ["Al-Khair Foundation", "Al-Khair Schools", "BizAv Media Ltd", "Saks London", "Photocopiers Direct", "EVA International", "Fidelis College", "IQRA ELM", "Heretoga", "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy", "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM", "Other (Type Below)"]
         location = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
-        
+
+        # 2. Conditional input field: Appears only if "Other (Type Below)" is chosen
+        final_location = ""
+        if selected_dropdown == "Other (Type Below)":
+            final_location = st.text_input("✏️ Type Your Custom Work Location Site:", value="").strip()
+        else:
+            final_location = selected_dropdown
+            
         st.write("📅 **Select Date Range Worked:**")
         date_range = st.date_input(
             "Click to choose start and end dates:",
