@@ -111,13 +111,13 @@ elif st.session_state.current_role == "EMPLOYEE":
         locations_list = ["Al-Khair Foundation", "Al-Khair Schools", "BizAv Media Ltd", "Saks London", "Photocopiers Direct", "EVA International", "Fidelis College", "IQRA ELM", "Heretoga", "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy", "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM", "Other (Type Below)"]
         location = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
 
-        # 2. Conditional input field: Appears only if "Other (Type Below)" is chosen
+       # 2. Conditional input field: Appears only if "Other (Type Below)" is chosen
         final_location = ""
         if selected_dropdown == "Other (Type Below)":
             final_location = st.text_input("✏️ Type Your Custom Work Location Site:", value="").strip()
         else:
             final_location = selected_dropdown
-            
+        
         st.write("📅 **Select Date Range Worked:**")
         date_range = st.date_input(
             "Click to choose start and end dates:",
@@ -127,8 +127,12 @@ elif st.session_state.current_role == "EMPLOYEE":
         st.markdown("---")
 
         if st.button("Process & Submit Timesheet", type="primary", use_container_width=True):
-            if not employee_name.strip():
+            if not employee_name.strip() or employee_name == "Enter your name":
                 st.error("⚠️ Please fill in your name.")
+            elif selected_dropdown == "Select the Location":
+                st.error("⚠️ Please select a valid work location.")
+            elif selected_dropdown == "Other (Type Below)" and not final_location:
+                st.error("⚠️ Please type your custom location name in the text box.")
             elif len(date_range) != 2:
                 st.warning("ℹ️ Please select both a Start Date and an End Date.")
             else:
@@ -147,11 +151,12 @@ elif st.session_state.current_role == "EMPLOYEE":
                             VALUES (%s, %s, %s)
                             ON DUPLICATE KEY UPDATE location = VALUES(location);
                             """
-                            cursor.execute(query, (employee_name.strip(), single_date, location))
+                            # 3. Save the custom typed location directly to your database
+                            cursor.execute(query, (employee_name.strip(), single_date, final_location))
                             success_count += 1
                             
                         conn.commit()
-                        st.success(f"🎉 Successfully logged {success_count} days for {employee_name} at {location}!")
+                        st.success(f"🎉 Successfully logged {success_count} days for {employee_name} at {final_location}!")
                         st.balloons()
                     except mysql.connector.Error as err:
                         st.error(f"❌ Database error: {err}")
