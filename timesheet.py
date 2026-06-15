@@ -58,7 +58,7 @@ if st.session_state.current_role == "NONE":
         col_img_left, col_img_center, col_img_right = st.columns([1, 2, 1])
         with col_img_center:
             # Replace 'logo.png' with your actual image file name
-            st.image("logo.png", width="stretch)
+            st.image("logo.png", width="stretch")
             
         st.write("")
         st.write("")
@@ -127,7 +127,7 @@ elif st.session_state.current_role == "EMPLOYEE":
 
         st.markdown("---")
 
-        if st.button("Process & Submit Timesheet", type="primary", use_container_width=True):
+        if st.button("Process & Submit Timesheet", type="primary", width="stretch"):
             if not employee_name.strip() or employee_name == "Enter your name":
                 st.error("⚠️ Please fill in your name.")
             elif selected_dropdown == "Select the Location":
