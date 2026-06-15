@@ -53,13 +53,13 @@ if st.session_state.current_role == "NONE":
     with center_card:
         st.write("")
         st.write("")
-        st.markdown("<h1 style='text-align: center;'>Identity Setup</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: gray;'>Choose your role in the company to get started.</p>", unsafe_allow_html=True)
-      # Centering the company logo and managing the size professionally
-      ##  col_img_left, col_img_center, col_img_right = st.columns([1, 2, 1])
-        ##with col_img_center:
-            # Replace 'logo.png' with your actual image file name
-          ##  st.image("logo.png", use_container_width=True)
+##        st.markdown("<h1 style='text-align: center;'>Identity Setup</h1>", unsafe_allow_html=True)
+##        st.markdown("<p style='text-align: center; color: gray;'>Choose your role in the company to get started.</p>", unsafe_allow_html=True)
+      #Centering the company logo and managing the size professionally
+        col_img_left, col_img_center, col_img_right = st.columns([1, 2, 1])
+        with col_img_center:
+      #  Replace 'logo.png' with your actual image file name
+        st.image("logo.png", use_container_width=True)
             
         st.write("")
         st.write("")
