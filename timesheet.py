@@ -58,7 +58,7 @@ if st.session_state.current_role == "NONE":
         col_img_left, col_img_center, col_img_right = st.columns([1, 2, 1])
         with col_img_center:
             # Replace 'logo.png' with your actual image file name
-            st.image("logo.png", use_container_width=True)
+            st.image("logo.png", width="stretch)
             
         st.write("")
         st.write("")
@@ -71,7 +71,7 @@ if st.session_state.current_role == "NONE":
                 st.markdown("**Manager**")
                 st.markdown("<span style='color: gray; font-size: 14px;'>View all employee records, counts, and payroll audit tracking pages.</span>", unsafe_allow_html=True)
             
-            if st.button("Select as Manager", key="btn_manager", use_container_width=True):
+            if st.button("Select as Manager", key="btn_manager", width="stretch"):
                 st.session_state.current_role = "MANAGER"
                 st.rerun()
 
@@ -85,7 +85,7 @@ if st.session_state.current_role == "NONE":
                 st.markdown("**Employee**")
                 st.markdown("<span style='color: gray; font-size: 14px;'>Log your daily work locations and submit timesheets seamlessly.</span>", unsafe_allow_html=True)
                 
-            if st.button("Select as Employee", key="btn_emp", use_container_width=True):
+            if st.button("Select as Employee", key="btn_emp", width="stretch"):
                 st.session_state.current_role = "EMPLOYEE"
                 st.rerun()
 
@@ -100,7 +100,7 @@ elif st.session_state.current_role == "EMPLOYEE":
         with col_title:
             st.title("📝 Employee Entry Workspace")
         with col_logout:
-            if st.button("↩️ Change Role", use_container_width=True):
+            if st.button("↩️ Change Role", width="stretch"):
                 st.session_state.current_role = "NONE"
                 st.rerun()
                 
@@ -109,7 +109,8 @@ elif st.session_state.current_role == "EMPLOYEE":
         employee_name = st.text_input("👤 Your Full Name:", value="Enter your name")
         
         locations_list = ["Al-Khair Foundation", "Al-Khair Schools", "BizAv Media Ltd", "Saks London", "Photocopiers Direct", "EVA International", "Fidelis College", "IQRA ELM", "Heretoga", "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy", "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM", "Other (Type Below)"]
-        location = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
+        ##location = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
+        selected_dropdown = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
 
        # 2. Conditional input field: Appears only if "Other (Type Below)" is chosen
         final_location = ""
@@ -170,10 +171,10 @@ elif st.session_state.current_role == "EMPLOYEE":
 elif st.session_state.current_role == "MANAGER":
     col_title, col_logout = st.columns([5, 1])
     with col_title:
-        st.title("💼 Enterprise Labor Management Dashboard")
+        st.title("💼 Management Dashboard")
         st.subheader("UK Multi-Site Operations Overview & Payroll Audit")
     with col_logout:
-        if st.button("↩️ Change Role", use_container_width=True):
+        if st.button("↩️ Change Role", width="stretch"):
             st.session_state.current_role = "NONE"
             st.rerun()
             
@@ -247,7 +248,7 @@ elif st.session_state.current_role == "MANAGER":
                 data=csv,
                 file_name=f"payroll_{selected_emp.replace(' ', '_')}_{selected_month.replace(' ', '_')}.csv",
                 mime="text/csv",
-                use_container_width=True
+                width="stretch"
             )
             
             st.write("")
