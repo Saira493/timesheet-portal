@@ -170,28 +170,40 @@ elif st.session_state.current_role == "EMPLOYEE":
                 st.error("⚠️ Please select a valid primary work location.")
             elif selected_dropdown == "Other (Type Below)" and not final_location:
                 st.error("⚠️ Please type your custom primary location name in the text box.")
-            elif not isinstance(date_range, list) or len(date_range) != 2:
-                st.warning("ℹ️ Please select both a Start Date and an End Date for your primary range.")
+            elif not date_range or (isinstance(date_range, list) and len(date_range) == 0):
+                st.warning("ℹ️ Please select at least one date for your primary range.")
             # Validation steps for the optional field if active
             elif has_additional and additional_dropdown == "Select the Location":
                 st.error("⚠️ Please select a valid location for your additional shift block.")
             elif has_additional and additional_dropdown == "Other (Type Below)" and not final_additional_location:
                 st.error("⚠️ Please type your custom additional location name in the text box.")
-            elif has_additional and (not isinstance(additional_date_range, list) or len(additional_date_range) != 2):
-                st.warning("ℹ️ Please select both a Start Date and an End Date for your additional range.")
+            elif has_additional and (not additional_date_range or (isinstance(additional_date_range, list) and len(additional_date_range) == 0)):
+                st.warning("ℹ️ Please select at least one date for your additional range.")
             else:
-                # 1. Generate dates for Primary Range
-                start_date, end_date = date_range[0], date_range[1]
+                # --- 1. Process Primary Range (Handles both 1 date and 2 date selections) ---
+                if isinstance(date_range, list) and len(date_range) == 2:
+                    start_date, end_date = date_range[0], date_range[1]
+                else:
+                    # If they only clicked one date, treat it as a single-day range
+                    start_date = date_range[0] if isinstance(date_range, list) else date_range
+                    end_date = start_date
+                    
                 delta = end_date - start_date
                 generated_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
                 
-                # 2. Generate dates for Additional Range if selected
+                # --- 2. Process Additional Range if selected ---
                 additional_dates = []
                 if has_additional:
-                    add_start, add_end = additional_date_range[0], additional_date_range[1]
+                    if isinstance(additional_date_range, list) and len(additional_date_range) == 2:
+                        add_start, add_end = additional_date_range[0], additional_date_range[1]
+                    else:
+                        add_start = additional_date_range[0] if isinstance(additional_date_range, list) else additional_date_range
+                        add_end = add_start
+                        
                     add_delta = add_end - add_start
                     additional_dates = [add_start + timedelta(days=i) for i in range(add_delta.days + 1)]
                 
+                # --- 3. Database Insertion ---
                 conn = get_db_connection()
                 if conn:
                     try:
