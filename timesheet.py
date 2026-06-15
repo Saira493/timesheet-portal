@@ -72,7 +72,7 @@ if st.session_state.current_role == "NONE":
                 st.markdown("<span style='color: gray; font-size: 14px;'>View all employee records, counts, and payroll audit tracking pages.</span>", unsafe_allow_html=True)
             
             if st.button("Select as Manager", key="btn_manager", use_container_width=True):
-                st.session_state.current_role = "BOSS"
+                st.session_state.current_role = "MANAGER"
                 st.rerun()
 
         st.write("")
@@ -155,7 +155,7 @@ elif st.session_state.current_role == "EMPLOYEE":
 # ==========================================
 # SCREEN 3: THE BOSS MONITORING DASHBOARD
 # ==========================================
-elif st.session_state.current_role == "BOSS":
+elif st.session_state.current_role == "MANAGER":
     col_title, col_logout = st.columns([5, 1])
     with col_title:
         st.title("💼 Enterprise Labor Management Dashboard")
