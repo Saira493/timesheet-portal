@@ -7,28 +7,6 @@ from datetime import datetime, timedelta
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Timesheet Portal", page_icon="📅", layout="wide")
 
-# --- CUSTOM CSS FOR PROFESSIONAL LOOK & GREEN BUTTON ---
-st.markdown("""
-    <style>
-    /* Turn Streamlit Primary Buttons Green */
-    div.stButton > button[kind="primary"] {
-        background-color: #2e7d32 !important;
-        color: white !important;
-        border-color: #1b5e20 !important;
-        font-weight: bold;
-    }
-    div.stButton > button[kind="primary"]:hover {
-        background-color: #1b5e20 !important;
-        border-color: #1b5e20 !important;
-    }
-    /* Style metrics for professional look */
-    [data-testid="stMetricValue"] {
-        font-size: 28px !important;
-        font-weight: 600;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # --- DATABASE CONNECTION FUNCTION ---
 def get_db_connection():
     try:
@@ -54,7 +32,7 @@ def calculate_billable_status(input_date):
         dt = input_date
 
     if dt.weekday() in [5, 6]:
-        return True, "Weekend Shift"  # Approved as payable since employee explicitly added it manually
+        return True, "Weekend Shift"  # Set to True so manually inputted weekend days calculate correctly
         
     uk_holidays = holidays.UnitedKingdom(subdiv='England', years=dt.year)
     if dt in uk_holidays:
@@ -65,8 +43,6 @@ def calculate_billable_status(input_date):
 # --- SESSION STATE INITIALIZATION ---
 if "current_role" not in st.session_state:
     st.session_state.current_role = "NONE"
-if "shift_batch" not in st.session_state:
-    st.session_state.shift_batch = []
 
 # ==========================================
 # SCREEN 1: IDENTITY SETUP (HOME SCREEN)
@@ -80,11 +56,7 @@ if st.session_state.current_role == "NONE":
         
         col_img_left, col_img_center, col_img_right = st.columns([1, 2, 1])
         with col_img_center:
-            try:
-                st.image("logo.png", width="stretch")
-            except Exception:
-                st.markdown("<h2 style='text-align: center; color: #2e7d32; margin-bottom:0;'>iTEA SOLUTIONS</h2>", unsafe_allow_html=True)
-                st.markdown("<p style='text-align: center; font-style: italic; color: gray;'>We've got IT covered</p>", unsafe_allow_html=True)
+            st.image("logo.png", width="stretch")
             
         st.write("")
         st.write("")
@@ -132,95 +104,222 @@ elif st.session_state.current_role == "EMPLOYEE":
                 
         st.markdown("---")
         
-        # Employee Name Entry
         employee_name = st.text_input("👤 Your Full Name:", value="Enter your name")
+       
+        st.markdown("### 📅 Add Your Worked Shifts")
         
         locations_list = [
             "Select the Location", "Al-Khair Foundation", "Al-Khair Schools", 
             "BizAv Media Ltd", "Saks London", "Photocopiers Direct", 
             "EVA International", "Fidelis College", "IQRA ELM", "Heretoga", 
             "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy", 
-            "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM",
+            "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM", 
             "Other (Type Below)"
         ]
         
-        # ---------------------------------------------------------
-        # SECTION 1: BULK DATE RANGE ENTRY (AUTOMATICALLY SKIPS WEEKENDS)
-        # ---------------------------------------------------------
-        st.markdown("### 📅 1. Bulk Date Range Entry")
-        st.caption("Select your main date range. Weekends (Saturdays & Sundays) will be automatically skipped.")
+        selected_dropdown = st.selectbox("📍 Select Your Work Location Site:", options=locations_list)
         
-        bulk_loc_dropdown = st.selectbox("📍 Select Location for Range:", options=locations_list, key="bulk_loc")
-        
-        final_bulk_loc = ""
-        if bulk_loc_dropdown == "Other (Type Below)":
-            final_bulk_loc = st.text_input("✏️ Type Your Custom Location for Range:", value="", key="bulk_custom_text").strip()
+        final_location = ""
+        if selected_dropdown == "Other (Type Below)":
+            final_location = st.text_input("✏️ Type Your Custom Work Location Site:", value="").strip()
         else:
-            final_bulk_loc = bulk_loc_dropdown
-
+            final_location = selected_dropdown
+        
+        st.write("📅 **Select Date Range Worked:**")
         date_range = st.date_input(
             "Click to choose start and end dates:",
             value=[datetime.now().date(), datetime.now().date() + timedelta(days=2)],
             key="bulk_date"
         )
         
-        if st.button("➕ Add Range to Batch", key="add_bulk_btn", width="stretch"):
-            if bulk_loc_dropdown == "Select the Location" or (bulk_loc_dropdown == "Other (Type Below)" and not final_bulk_loc):
-                st.error("⚠️ Please select or type a valid work location site.")
+        st.markdown("---")
+        
+        # ---------------------------------------------------------
+        # MANUAL OVERRIDE ASSIGNMENT BLOCK FOR WEEKENDS / EXTRA SHIFTS
+        # ---------------------------------------------------------
+        st.markdown("### ➕ Add Extra Manual Shifts")
+        st.caption("If you need to submit extra dates outside the range or on weekends, select them here:")
+        
+        if "manual_shifts" not in st.session_state:
+            st.session_state.manual_shifts = []
+            
+        col_m_date, col_m_loc = st.columns(2)
+        with col_m_date:
+            manual_date = st.date_input("Select Extra Date:", value=datetime.now().date(), key="manual_date_picker")
+        with col_m_loc:
+            manual_loc_dropdown = st.selectbox("Assign Location to Extra Date:", options=locations_list, key="manual_loc_select")
+            
+        final_manual_loc = ""
+        if manual_loc_dropdown == "Other (Type Below)":
+            final_manual_loc = st.text_input("✏️ Type Custom Location for Extra Date:", value="", key="manual_loc_custom").strip()
+        else:
+            final_manual_loc = manual_loc_dropdown
+            
+        if st.button("➕ Add Manual Date Override", width="stretch"):
+            if manual_loc_dropdown == "Select the Location" or (manual_loc_dropdown == "Other (Type Below)" and not final_manual_loc):
+                st.error("⚠️ Please assign a valid location for your extra manual entry.")
+            else:
+                # Remove duplicate date from custom tracking if it already exists
+                st.session_state.manual_shifts = [item for item in st.session_state.manual_shifts if item['date'] != manual_date]
+                st.session_state.manual_shifts.append({"date": manual_date, "location": final_manual_loc})
+                st.toast(f"✅ Added {manual_date} to your manual overrides list!")
+                
+        # Display appended manual entries if present
+        if st.session_state.manual_shifts:
+            st.markdown("#### **Pending Extra Shifts to Add:**")
+            for idx, item in enumerate(st.session_state.manual_shifts):
+                c_text, c_btn = st.columns([5, 1])
+                with c_text:
+                    st.markdown(f"⭐ **{item['date']}** ({item['date'].strftime('%A')}) — Site: *{item['location']}*")
+                with c_btn:
+                    if st.button("❌ Remove", key=f"rem_m_{idx}"):
+                        st.session_state.manual_shifts.pop(idx)
+                        st.rerun()
+
+        st.markdown("---")
+
+        if st.button("Process & Submit Timesheet", type="primary", width="stretch"):
+            if not employee_name.strip() or employee_name == "Enter your name":
+                st.error("⚠️ Please fill in your name.")
+            elif selected_dropdown == "Select the Location":
+                st.error("⚠️ Please select a valid work location.")
+            elif selected_dropdown == "Other (Type Below)" and not final_location:
+                st.error("⚠️ Please type your custom location name in the text box.")
             elif not isinstance(date_range, list) or len(date_range) != 2:
-                st.warning("ℹ️ Please select both a Start Date and an End Date on the calendar.")
+                st.warning("ℹ️ Please select both a Start Date and an End Date.")
             else:
                 start_date, end_date = date_range[0], date_range[1]
                 delta = end_date - start_date
-                added_counter = 0
+                generated_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
                 
-                for i in range(delta.days + 1):
-                    current_day = start_date + timedelta(days=i)
-                    
-                    # Automatically skip Saturdays (5) and Sundays (6)
-                    if current_day.weekday() in [5, 6]:
-                        continue
+                conn = get_db_connection()
+                if conn:
+                    try:
+                        cursor = conn.cursor()
+                        success_count = 0
                         
-                    # Add to batch list (replaces if date already exists)
-                    st.session_state.shift_batch = [d for d in st.session_state.shift_batch if d['date'] != current_day]
-                    st.session_state.shift_batch.append({'date': current_day, 'location': final_bulk_loc})
-                    added_counter += 1
-                    
-                st.toast(f"✅ Automatically skipped weekends and added {added_counter} weekdays to your batch!")
+                        # 1. Process Main Date Range (Strictly skips weekends automatically)
+                        for single_date in generated_dates:
+                            if single_date.weekday() in [5, 6]:
+                                continue
+                                
+                            query = """
+                            INSERT INTO daily_records (employee_name, work_date, location)
+                            VALUES (%s, %s, %s)
+                            ON DUPLICATE KEY UPDATE location = VALUES(location);
+                            """
+                            cursor.execute(query, (employee_name.strip(), single_date, final_location))
+                            success_count += 1
+                            
+                        # 2. Process Extra Manual Shifts (Allows weekends/custom entries perfectly)
+                        for manual_item in st.session_state.manual_shifts:
+                            query = """
+                            INSERT INTO daily_records (employee_name, work_date, location)
+                            VALUES (%s, %s, %s)
+                            ON DUPLICATE KEY UPDATE location = VALUES(location);
+                            """
+                            cursor.execute(query, (employee_name.strip(), manual_item['date'], manual_item['location']))
+                            success_count += 1
+                            
+                        conn.commit()
+                        st.success(f"🎉 Successfully logged {success_count} days for {employee_name} into your live data pools!")
+                        st.balloons()
+                        st.session_state.manual_shifts = []  # Reset manual override list buffer on successful post
+                    except mysql.connector.Error as err:
+                        st.error(f"❌ Database error: {err}")
+                    finally:
+                        cursor.close()
+                        conn.close()
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("---")
-
-        # ---------------------------------------------------------
-        # SECTION 2: EXTRA INDIVIDUAL SHIFTS (MANUAL ENTRY / ALLOWS WEEKENDS)
-        # ---------------------------------------------------------
-        st.markdown("### ➕ 2. Add Extra Individual Shifts (Weekends / Extra Days)")
-        st.caption("Use this section to manually add individual specific dates. Saturdays, Sundays, and custom entries are allowed here.")
+# ==========================================
+# SCREEN 3: THE BOSS MONITORING DASHBOARD
+# ==========================================
+elif st.session_state.current_role == "MANAGER":
+    col_title, col_logout = st.columns([5, 1])
+    with col_title:
+        st.title("💼 Management Dashboard")
+        st.subheader("UK Multi-Site Operations Overview & Payroll Audit")
+    with col_logout:
+        if st.button("↩️ Change Role", width="stretch"):
+            st.session_state.current_role = "NONE"
+            st.rerun()
+            
+    st.markdown("---")
+    
+    records = []
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT employee_name, work_date, location FROM daily_records ORDER BY work_date DESC")
+            records = cursor.fetchall()
+        except mysql.connector.Error as err:
+            st.error(f"⚠️ Could not pull entries table: {err}")
+        finally:
+            cursor.close()
+            conn.close()
+            
+    if not records:
+        st.info("📂 No logged timesheets found in your live database tables yet.")
+    else:
+        df = pd.DataFrame(records)
+        df['work_date'] = pd.to_datetime(df['work_date']).dt.date
+        df['Month_Year'] = pd.to_datetime(df['work_date']).dt.strftime('%B %Y')
         
-        col_date, col_loc = st.columns(2)
-        with col_date:
-            single_date = st.date_input("Choose Specific Date Worked:", value=datetime.now().date(), key="single_date_picker")
-        with col_loc:
-            single_loc_dropdown = st.selectbox("Assign Location to This Specific Date:", options=locations_list, key="single_loc")
+        status_results = df['work_date'].apply(calculate_billable_status)
+        df['Is Payable'] = [res[0] for res in status_results]
+        df['Day Categorization'] = [res[1] for res in status_results]
+        
+        st.markdown("### 🔍 Filter Work Records")
+        filter_col1, filter_col2 = st.columns(2)
+        
+        with filter_col1:
+            unique_employees = sorted(list(df['employee_name'].unique()))
+            selected_emp = st.selectbox("1. Select an Employee:", unique_employees)
             
-        final_single_loc = ""
-        if single_loc_dropdown == "Other (Type Below)":
-            final_single_loc = st.text_input("✏️ Type Your Custom Location for This Specific Date:", value="", key="single_custom_text").strip()
-        else:
-            final_single_loc = single_loc_dropdown
+        with filter_col2:
+            emp_months = df[df['employee_name'] == selected_emp]['Month_Year'].unique()
+            selected_month = st.selectbox("2. Choose Pay-Period Month:", sorted(list(emp_months)))
             
-        if st.button("➕ Add Extra Individual Shift to Batch", key="add_single_btn", width="stretch"):
-            if single_loc_dropdown == "Select the Location" or (single_loc_dropdown == "Other (Type Below)" and not final_single_loc):
-                st.error("⚠️ Please assign a valid location for this specific date entry.")
+        st.markdown("---")
+        
+        if selected_emp and selected_month:
+            filtered_df = df[(df['employee_name'] == selected_emp) & (df['Month_Year'] == selected_month)]
+            payable_df = filtered_df[filtered_df['Is Payable'] == True]
+            
+            summary_df = payable_df.groupby('location').size().reset_index(name='Payable Days')
+            summary_df.columns = ['UK Work Location Site', 'Total Days Owed Pay']
+            
+            total_days_logged = len(filtered_df)
+            total_payable_days = summary_df['Total Days Owed Pay'].sum()
+            total_excluded_days = total_days_logged - total_payable_days
+            
+            st.markdown(f"### 📊 Breakdown for {selected_emp} during **{selected_month}**")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("📅 Total Days Logged", f"{total_days_logged} Days")
+            m2.metric("💰 Approved Payable Days", f"{total_payable_days} Days")
+            m3.metric("🛑 Excluded (Weekends / Holidays)", f"{total_excluded_days} Days")
+            
+            st.write("")
+            
+            st.markdown("#### **Approved Payroll Summary Table**")
+            if not summary_df.empty:
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
             else:
-                # Add to batch (allows adding as many unique dates as they want)
-                st.session_state.shift_batch = [d for d in st.session_state.shift_batch if d['date'] != single_date]
-                st.session_state.shift_batch.append({'date': single_date, 'location': final_single_loc})
-                st.toast(f"✅ Manually added shift for {single_date} at {final_single_loc}!")
-
-        st.markdown("---")
-        st.markdown("### 📋 Your Pending Submission Batch")
-        
-        # --- RENDER BATCH ENTRIES WITH INDIVIDUAL DELETE OPTION ---
-        if not st.session_state.shift_batch:
-            st.info("Your current batch list is empty. Add shifts using the range entry or
+                st.warning(f"This staff user has 0 payable days within the selection parameter month.")
+                
+            csv = filtered_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download This Filtered Report to CSV",
+                data=csv,
+                file_name=f"payroll_{selected_emp.replace(' ', '_')}_{selected_month.replace(' ', '_')}.csv",
+                mime="text/csv",
+                width="stretch"
+            )
+            
+            st.write("")
+            
+            with st.expander("🔍 In-Depth Shift Audit Log (View Classification Breakdown)"):
+                audit_display_df = filtered_df[['work_date', 'location', 'Day Categorization', 'Is Payable']].copy()
+                audit_display_df.columns = ['Calendar Date', 'Location Site', 'Payroll Classification', 'Paid Status']
+                st.dataframe(audit_display_df, use_container_width=True, hide_index=True)
