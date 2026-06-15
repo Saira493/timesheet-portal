@@ -61,7 +61,7 @@ if st.session_state.current_role == "NONE":
             st.image("logo.png", use_container_width=True)
             
         st.write("")
-        st.write("")
+        ##st.write("")
         
         with st.container(border=True):
             col1, col2 = st.columns([1, 5])
