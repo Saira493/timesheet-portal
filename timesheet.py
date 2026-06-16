@@ -210,7 +210,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                 # Generate dates
                 delta = end_date - start_date
                 generated_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
-                ``
+                
                                 
                 # --- 2. Process Additional Range if selected ---
                 # --- 2. ✅ SAFE PROCESS ADDITIONAL RANGE ---
