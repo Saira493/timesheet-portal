@@ -112,10 +112,10 @@ elif st.session_state.current_role == "EMPLOYEE":
        
         st.markdown("### 📅 Add Your Worked Shifts")
         
-        # Fixed list with "Other (Type Below)" completely removed
+        # Updated location list to officially include Holidays (Day off)
         locations_list = [
-            "Select the Location", "Al-Khair Foundation", "Al-Khair Schools", 
-            "BizAv Media Ltd", "Saks London", "Photocopiers Direct", 
+            "Select the Location", "Holidays (Day off)", "Al-Khair Foundation", 
+            "Al-Khair Schools", "BizAv Media Ltd", "Saks London", "Photocopiers Direct", 
             "EVA International", "Fidelis College", "IQRA ELM", "Heretoga", 
             "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy", 
             "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM"
@@ -123,9 +123,9 @@ elif st.session_state.current_role == "EMPLOYEE":
         
         # --- PRIMARY SHIFT BLOCK ---
         st.markdown("#### **Primary Bulk Shift Block (Optional)**")
-        selected_dropdown = st.selectbox("📍 Select Your Main Work Location Site:", options=locations_list, key="primary_loc")
+        selected_dropdown = st.selectbox("📍 Select Your Main Work Location Site / Status:", options=locations_list, key="primary_loc")
         
-        st.write("📅 **Select Primary Date Range Worked:**")
+        st.write("📅 **Select Primary Date Range Worked / Off:**")
         date_range = st.date_input(
             "Click to choose start and end dates:",
             value=[datetime.now().date(), datetime.now().date() + timedelta(days=2)],
@@ -189,13 +189,13 @@ elif st.session_state.current_role == "EMPLOYEE":
                 has_errors = True
                 
             if not primary_is_active and st.session_state.extra_shifts_count == 0:
-                st.error("⚠️ Please select either a primary work location or add at least one individual shift entry row.")
+                st.error("⚠️ Please select either a location or add at least one individual shift entry row.")
                 has_errors = True
                 
             # Dynamic Row Iteration validation checks
             for idx, loc_check in enumerate(extra_locations_selected):
                 if loc_check == "Select the Location":
-                    st.error(f"⚠️ Please select a valid location site for entry row #{idx+1}.")
+                    st.error(f"⚠️ Please select a valid location site/status for entry row #{idx+1}.")
                     has_errors = True
             
             if not has_errors:
@@ -226,10 +226,11 @@ elif st.session_state.current_role == "EMPLOYEE":
                         cursor = conn.cursor()
                         success_count = 0
                         
-                        # Process Main Range List Array (Skips weekends automatically)
+                        # Process Main Range List Array (Skips weekends automatically unless it's a dedicated holiday entry)
                         if primary_is_active:
                             for single_date in generated_dates:
-                                if single_date.weekday() in [5, 6]:
+                                # Skips weekends for standard locations, but logs them if it's explicitly marked as a Holiday selection
+                                if selected_dropdown != "Holidays (Day off)" and single_date.weekday() in [5, 6]:
                                     continue
                                     
                                 query = """
@@ -240,7 +241,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                                 cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown))
                                 success_count += 1
                             
-                        # Process dynamically added extra single shifts loop (Allows Weekends to bypass!)
+                        # Process dynamically added extra single shifts loop (Allows Weekends/Holidays to bypass checks!)
                         for idx in range(len(extra_locations_selected)):
                             chosen_loc = extra_locations_selected[idx]
                             chosen_date = extra_dates_selected[idx]
@@ -254,12 +255,12 @@ elif st.session_state.current_role == "EMPLOYEE":
                             success_count += 1
                                 
                         conn.commit()
-                        st.success(f"🎉 Successfully logged {success_count} total days for {employee_name} into your database records!")
+                        st.success(f"🎉 Successfully logged {success_count} total entries for {employee_name} into your database records!")
                         st.balloons()
                         
-                        # Reset extra count state to clean the workspace for next submission run
+                        # Reset extra count state to clean workspace
                         st.session_state.extra_shifts_count = 0
-                       # st.rerun()
+                        st.rerun()
                         
                     except mysql.connector.Error as err:
                         st.error(f"❌ Database error: {err}")
@@ -321,20 +322,28 @@ elif st.session_state.current_role == "MANAGER":
         
         if selected_emp and selected_month:
             filtered_df = df[(df['employee_name'] == selected_emp) & (df['Month_Year'] == selected_month)]
-            payable_df = filtered_df[filtered_df['Is Payable'] == True]
             
-            summary_df = payable_df.groupby('location').size().reset_index(name='Payable Days')
-            summary_df.columns = ['UK Work Location Site', 'Total Days Owed Pay']
+            # Separate active physical work vs holiday tracking entries
+            work_payable_df = filtered_df[(filtered_df['Is Payable'] == True) & (filtered_df['location'] != "Holidays (Day off)")]
+            holiday_df = filtered_df[filtered_df['location'] == "Holidays (Day off)"]
+            
+            # Generate the summary display group table matching the structures
+            summary_df = filtered_df.groupby('location').size().reset_index(name='Total Days')
+            summary_df.columns = ['UK Work Location Site / Status', 'Total Count Days']
             
             total_days_logged = len(filtered_df)
-            total_payable_days = summary_df['Total Days Owed Pay'].sum() if not summary_df.empty else 0
-            total_excluded_days = total_days_logged - total_payable_days
+            total_payable_days = len(work_payable_df)
+            total_holiday_days = len(holiday_df)
+            total_excluded_days = total_days_logged - total_payable_days - total_holiday_days
             
             st.markdown(f"### 📊 Breakdown for {selected_emp} during **{selected_month}**")
-            m1, m2, m3 = st.columns(3)
+            
+            # 4-Column Metric Layout showing standard calculations side-by-side with Holidays
+            m1, m2, m3, m4 = st.columns(4)
             m1.metric("📅 Total Days Logged", f"{total_days_logged} Days")
             m2.metric("💰 Approved Payable Days", f"{total_payable_days} Days")
-            m3.metric("🛑 Excluded (Weekends / Holidays)", f"{total_excluded_days} Days")
+            m3.metric("🏖️ Holidays / Days Off", f"{total_holiday_days} Days")
+            m4.metric("🛑 Excluded (Weekends/Bank Holidays)", f"{total_excluded_days} Days")
             
             st.write("")
             
@@ -342,7 +351,7 @@ elif st.session_state.current_role == "MANAGER":
             if not summary_df.empty:
                 st.dataframe(summary_df, use_container_width=True, hide_index=True)
             else:
-                st.warning(f"This staff user has 0 payable days within the selection parameter month.")
+                st.warning(f"This staff user has 0 records within the selection parameter month.")
                 
             csv = filtered_df.to_csv(index=False).encode('utf-8')
             st.download_button(
@@ -357,5 +366,5 @@ elif st.session_state.current_role == "MANAGER":
             
             with st.expander("🔍 In-Depth Shift Audit Log (View Classification Breakdown)"):
                 audit_display_df = filtered_df[['work_date', 'location', 'Day Categorization', 'Is Payable']].copy()
-                audit_display_df.columns = ['Calendar Date', 'Location Site', 'Payroll Classification', 'Paid Status']
+                audit_display_df.columns = ['Calendar Date', 'Location / Status', 'Payroll Classification', 'Paid Status']
                 st.dataframe(audit_display_df, use_container_width=True, hide_index=True)
