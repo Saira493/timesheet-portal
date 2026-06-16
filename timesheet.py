@@ -181,27 +181,68 @@ elif st.session_state.current_role == "EMPLOYEE":
                 st.warning("ℹ️ Please select at least one date for your additional range.")
             else:
                 # --- 1. Process Primary Range (Handles both 1 date and 2 date selections) ---
-                if isinstance(date_range, list) and len(date_range) == 2:
-                    start_date, end_date = date_range[0], date_range[1]
-                else:
-                    # If they only clicked one date, treat it as a single-day range
-                    start_date = date_range[0] if isinstance(date_range, list) else date_range
-                    end_date = start_date
-                    
-                delta = end_date - start_date
-                generated_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
+                # --- 1. ✅ SAFE PROCESS PRIMARY RANGE ---
+
+# Validate input exists
+if date_range is None:
+    st.error("⚠️ No date selected.")
+    st.stop()
+
+# Convert to list if needed
+if not isinstance(date_range, list):
+    date_range = [date_range]
+
+# Extract start and end safely
+if len(date_range) == 1:
+    start_date = date_range[0]
+    end_date = date_range[0]
+elif len(date_range) == 2:
+    start_date, end_date = date_range
+else:
+    st.error("⚠️ Invalid date selection.")
+    st.stop()
+
+# Final safety check
+if not start_date or not end_date:
+    st.error("⚠️ Start or End date missing.")
+    st.stop()
+
+# Generate dates
+delta = end_date - start_date
+generated_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
+``
                 
                 # --- 2. Process Additional Range if selected ---
-                additional_dates = []
-                if has_additional:
-                    if isinstance(additional_date_range, list) and len(additional_date_range) == 2:
-                        add_start, add_end = additional_date_range[0], additional_date_range[1]
-                    else:
-                        add_start = additional_date_range[0] if isinstance(additional_date_range, list) else additional_date_range
-                        add_end = add_start
-                        
-                    add_delta = add_end - add_start
-                    additional_dates = [add_start + timedelta(days=i) for i in range(add_delta.days + 1)]
+                # --- 2. ✅ SAFE PROCESS ADDITIONAL RANGE ---
+
+additional_dates = []
+
+if has_additional:
+    if additional_date_range is None:
+        st.error("⚠️ No additional dates selected.")
+        st.stop()
+
+    # Convert to list
+    if not isinstance(additional_date_range, list):
+        additional_date_range = [additional_date_range]
+
+    # Extract safely
+    if len(additional_date_range) == 1:
+        add_start = additional_date_range[0]
+        add_end = additional_date_range[0]
+    elif len(additional_date_range) == 2:
+        add_start, add_end = additional_date_range
+    else:
+        st.error("⚠️ Invalid additional date selection.")
+        st.stop()
+
+    # Final safety
+    if not add_start or not add_end:
+        st.error("⚠️ Additional dates missing.")
+        st.stop()
+
+    add_delta = add_end - add_start
+    additional_dates = [add_start + timedelta(days=i) for i in range(add_delta.days + 1)]
                 
                 # --- 3. Database Insertion ---
                 conn = get_db_connection()
