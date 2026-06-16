@@ -184,15 +184,15 @@ elif st.session_state.current_role == "EMPLOYEE":
              if isinstance(date_range, (list, tuple)):
                 if len(date_range) == 2:
                         start_date, end_date = date_range[0], date_range[1]
-                    elif len(date_range) == 1:
-                        start_date = date_range[0]
-                        end_date = start_date
-                    else:
+                 elif len(date_range) == 1:
+                     start_date = date_range[0]
+                      end_date = start_date
+                 else:
                         st.error("⚠️ Please select a valid date range.")
                         st.stop()
-                    else:
-                        start_date = date_range
-                        end_date = start_date
+             else:
+                     start_date = date_range
+                     end_date = start_date
 
                 
                 # Generate dates
