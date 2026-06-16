@@ -181,7 +181,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                 st.warning("ℹ️ Please select at least one date for your additional range.")
             else:
                 # --- 1. Process Primary Range (Handles both 1 date and 2 date selections safely) ---
-            if isinstance(date_range, (list, tuple)):
+        if isinstance(date_range, (list, tuple)):
                 if len(date_range) == 2:
                     start_date, end_date = date_range[0], date_range[1]
                 elif len(date_range) == 1:
