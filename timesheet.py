@@ -180,32 +180,20 @@ elif st.session_state.current_role == "EMPLOYEE":
             elif has_additional and (not additional_date_range or (isinstance(additional_date_range, list) and len(additional_date_range) == 0)):
                 st.warning("ℹ️ Please select at least one date for your additional range.")
             else:
-                # --- 1. Process Primary Range (Handles both 1 date and 2 date selections) ---
-                # --- 1. ✅ SAFE PROCESS PRIMARY RANGE ---
-
-                # Validate input exists
-                if date_range is None:
-                    st.error("⚠️ No date selected.")
-                    st.stop()
-
-                # Convert to list if needed
-                if not isinstance(date_range, list):
-                   date_range = [date_range]
-
-                # Extract start and end safely
-                if len(date_range) == 1:
+                # --- 1. Process Primary Range (Handles both 1 date and 2 date selections safely) ---
+            if isinstance(date_range, (list, tuple)):
+                if len(date_range) == 2:
+                    start_date, end_date = date_range[0], date_range[1]
+                elif len(date_range) == 1:
                     start_date = date_range[0]
-                    end_date = date_range[0]
-                elif len(date_range) == 2:
-                    start_date, end_date = date_range
+                    end_date = start_date
                 else:
-                    st.error("⚠️ Invalid date selection.")
+                    st.error("⚠️ Please select a valid date range.")
                     st.stop()
+            else:
+                start_date = date_range
+                end_date = start_date
 
-                # Final safety check
-                if not start_date or not end_date:
-                    st.error("⚠️ Start or End date missing.")
-                    st.stop()
                 
                 # Generate dates
                 delta = end_date - start_date
