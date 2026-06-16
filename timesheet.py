@@ -259,7 +259,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                         
                         # Reset extra count state to clean the workspace for next submission run
                         st.session_state.extra_shifts_count = 0
-                        st.rerun()
+                       # st.rerun()
                         
                     except mysql.connector.Error as err:
                         st.error(f"❌ Database error: {err}")
