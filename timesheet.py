@@ -122,7 +122,7 @@ elif st.session_state.current_role == "EMPLOYEE":
         ]
         
         # --- PRIMARY SHIFT BLOCK ---
-        st.markdown("#### **Primary Shift Block**")
+        st.markdown("#### **Primary Bulk Shift Block (Optional)**")
         selected_dropdown = st.selectbox("📍 Select Your Main Work Location Site:", options=locations_list, key="primary_loc")
         
         st.write("📅 **Select Primary Date Range Worked:**")
@@ -143,22 +143,23 @@ elif st.session_state.current_role == "EMPLOYEE":
         
         # Loop over the current count to build matching option fields on your layout screen
         for i in range(st.session_state.extra_shifts_count):
-            st.markdown(f"##### Extra Shift Entry #{i+1}")
             add_col1, add_col2 = st.columns(2)
             
             with add_col1:
                 loc_entry = st.selectbox(
-                    f"📍 Select Location for Shift #{i+1}:", 
+                    f"📍 Select Location:", 
                     options=locations_list, 
-                    key=f"extra_loc_{i}"
+                    key=f"extra_loc_{i}",
+                    label_visibility="collapsed" if i > 0 else "visible"
                 )
                 extra_locations_selected.append(loc_entry)
                     
             with add_col2:
                 date_entry = st.date_input(
-                    f"📅 Select Single Date for Shift #{i+1}:", 
+                    f"📅 Select Single Date:", 
                     value=datetime.now().date(), 
-                    key=f"extra_date_{i}"
+                    key=f"extra_date_{i}",
+                    label_visibility="collapsed" if i > 0 else "visible"
                 )
                 extra_dates_selected.append(date_entry)
         
@@ -180,41 +181,45 @@ elif st.session_state.current_role == "EMPLOYEE":
             # Validation Flags
             has_errors = False
             
+            # Check if primary is skipped and extra entries are completely empty
+            primary_is_active = (selected_dropdown != "Select the Location")
+            
             if not employee_name.strip() or employee_name == "Enter your name":
                 st.error("⚠️ Please fill in your name.")
                 has_errors = True
-            elif selected_dropdown == "Select the Location":
-                st.error("⚠️ Please select a valid primary work location.")
-                has_errors = True
-            elif not date_range or (isinstance(date_range, list) and len(date_range) == 0):
-                st.warning("ℹ️ Please select at least one date for your primary range.")
+                
+            if not primary_is_active and st.session_state.extra_shifts_count == 0:
+                st.error("⚠️ Please select either a primary work location or add at least one individual shift entry row.")
                 has_errors = True
                 
             # Dynamic Row Iteration validation checks
             for idx, loc_check in enumerate(extra_locations_selected):
                 if loc_check == "Select the Location":
-                    st.error(f"⚠️ Please select a valid location site for Extra Shift #{idx+1}.")
+                    st.error(f"⚠️ Please select a valid location site for entry row #{idx+1}.")
                     has_errors = True
             
             if not has_errors:
-                # --- 1. Process Primary Range ---
-                if isinstance(date_range, (list, tuple)):
-                    if len(date_range) == 2:
-                        start_date, end_date = date_range[0], date_range[1]
-                    elif len(date_range) == 1:
-                        start_date = date_range[0]
-                        end_date = start_date
-                    else:
-                        st.error("⚠️ Please select a valid date range.")
-                        st.stop()
-                else:
-                    start_date = date_range
-                    end_date = start_date
-
-                delta = end_date - start_date
-                generated_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
+                generated_dates = []
                 
-                # --- 2. Database Insertion Run ---
+                # Only process primary ranges if the field was actually filled out
+                if primary_is_active:
+                    if isinstance(date_range, (list, tuple)):
+                        if len(date_range) == 2:
+                            start_date, end_date = date_range[0], date_range[1]
+                        elif len(date_range) == 1:
+                            start_date = date_range[0]
+                            end_date = start_date
+                        else:
+                            st.error("⚠️ Please select a valid date range.")
+                            st.stop()
+                    else:
+                        start_date = date_range
+                        end_date = start_date
+
+                    delta = end_date - start_date
+                    generated_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
+                
+                # --- Database Insertion Run ---
                 conn = get_db_connection()
                 if conn:
                     try:
@@ -222,26 +227,23 @@ elif st.session_state.current_role == "EMPLOYEE":
                         success_count = 0
                         
                         # Process Main Range List Array (Skips weekends automatically)
-                        for single_date in generated_dates:
-                            if single_date.weekday() in [5, 6]:
-                                continue
-                                
-                            query = """
-                            INSERT INTO daily_records (employee_name, work_date, location)
-                            VALUES (%s, %s, %s)
-                            ON DUPLICATE KEY UPDATE location = VALUES(location);
-                            """
-                            cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown))
-                            success_count += 1
+                        if primary_is_active:
+                            for single_date in generated_dates:
+                                if single_date.weekday() in [5, 6]:
+                                    continue
+                                    
+                                query = """
+                                INSERT INTO daily_records (employee_name, work_date, location)
+                                VALUES (%s, %s, %s)
+                                ON DUPLICATE KEY UPDATE location = VALUES(location);
+                                """
+                                cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown))
+                                success_count += 1
                             
-                        # Process dynamically added extra single shifts loop
+                        # Process dynamically added extra single shifts loop (Allows Weekends to bypass!)
                         for idx in range(len(extra_locations_selected)):
                             chosen_loc = extra_locations_selected[idx]
                             chosen_date = extra_dates_selected[idx]
-                            
-                            # Skip if weekend shifts shouldn't be counted, or leave out restriction if allowed
-                            if chosen_date.weekday() in [5, 6]:
-                                continue
                                 
                             query = """
                             INSERT INTO daily_records (employee_name, work_date, location)
@@ -257,6 +259,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                         
                         # Reset extra count state to clean the workspace for next submission run
                         st.session_state.extra_shifts_count = 0
+                        st.rerun()
                         
                     except mysql.connector.Error as err:
                         st.error(f"❌ Database error: {err}")
