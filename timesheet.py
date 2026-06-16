@@ -190,7 +190,7 @@ elif st.session_state.current_role == "EMPLOYEE":
 
                 # Convert to list if needed
                 if not isinstance(date_range, list):
-                date_range = [date_range]
+                   date_range = [date_range]
 
                 # Extract start and end safely
                 if len(date_range) == 1:
