@@ -32,7 +32,7 @@ def calculate_billable_status(input_date):
         dt = input_date
 
     if dt.weekday() in [5, 6]:
-        return True, "Weekend Shift"  # Set to True so manually inputted weekend days calculate correctly
+        return True, "Weekend Shift"
         
     uk_holidays = holidays.UnitedKingdom(subdiv='England', years=dt.year)
     if dt in uk_holidays:
@@ -43,6 +43,10 @@ def calculate_billable_status(input_date):
 # --- SESSION STATE INITIALIZATION ---
 if "current_role" not in st.session_state:
     st.session_state.current_role = "NONE"
+
+# Keep track of how many extra shift entries the user has clicked to add
+if "extra_shifts_count" not in st.session_state:
+    st.session_state.extra_shifts_count = 0
 
 # ==========================================
 # SCREEN 1: IDENTITY SETUP (HOME SCREEN)
@@ -108,76 +112,92 @@ elif st.session_state.current_role == "EMPLOYEE":
        
         st.markdown("### 📅 Add Your Worked Shifts")
         
+        # Fixed list with "Other (Type Below)" completely removed
         locations_list = [
             "Select the Location", "Al-Khair Foundation", "Al-Khair Schools", 
             "BizAv Media Ltd", "Saks London", "Photocopiers Direct", 
             "EVA International", "Fidelis College", "IQRA ELM", "Heretoga", 
             "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy", 
-            "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM", 
-            "Other (Type Below)"
+            "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM"
         ]
         
         # --- PRIMARY SHIFT BLOCK ---
-        selected_dropdown = st.selectbox("📍 Select Your Work Location Site:", options=locations_list, key="primary_loc")
+        st.markdown("#### **Primary Shift Block**")
+        selected_dropdown = st.selectbox("📍 Select Your Main Work Location Site:", options=locations_list, key="primary_loc")
         
-        final_location = ""
-        if selected_dropdown == "Other (Type Below)":
-            final_location = st.text_input("✏️ Type Your Custom Work Location Site:", value="", key="primary_custom").strip()
-        else:
-            final_location = selected_dropdown
-        
-        st.write("📅 **Select Date Range Worked:**")
+        st.write("📅 **Select Primary Date Range Worked:**")
         date_range = st.date_input(
             "Click to choose start and end dates:",
             value=[datetime.now().date(), datetime.now().date() + timedelta(days=2)],
             key="bulk_date"
         )
         
-        # --- ADDITIONAL SHIFT BLOCK ---
+        # --- DYNAMIC EXTRA SINGLE SHIFTS LIST ---
         st.markdown("---")
+        st.markdown("#### **Additional Individual Shifts**")
+        st.write("Need to add separate individual single days? Click the button below to add custom shifts on different dates.")
         
-        has_additional = st.checkbox("➕ Add an extra location and date range", value=False)
+        # Array containers to collect user entries inside our dynamic loop
+        extra_locations_selected = []
+        extra_dates_selected = []
         
-        final_additional_location = ""
-        additional_date_range = None
-        
-        if has_additional:
-            st.markdown("#### **Additional Shift Block**")
+        # Loop over the current count to build matching option fields on your layout screen
+        for i in range(st.session_state.extra_shifts_count):
+            st.markdown(f"##### Extra Shift Entry #{i+1}")
             add_col1, add_col2 = st.columns(2)
             
             with add_col1:
-                additional_dropdown = st.selectbox("📍 Select Additional Work Location:", options=locations_list, key="add_loc")
-                if additional_dropdown == "Other (Type Below)":
-                    final_additional_location = st.text_input("✏️ Type Custom Additional Location:", value="", key="add_custom").strip()
-                else:
-                    final_additional_location = additional_dropdown
+                loc_entry = st.selectbox(
+                    f"📍 Select Location for Shift #{i+1}:", 
+                    options=locations_list, 
+                    key=f"extra_loc_{i}"
+                )
+                extra_locations_selected.append(loc_entry)
                     
             with add_col2:
-                additional_date_range = st.date_input(
-                    "📅 Select Additional Date Range Worked:",
-                    value=[datetime.now().date(), datetime.now().date() + timedelta(days=2)],
-                    key="add_date"
+                date_entry = st.date_input(
+                    f"📅 Select Single Date for Shift #{i+1}:", 
+                    value=datetime.now().date(), 
+                    key=f"extra_date_{i}"
                 )
+                extra_dates_selected.append(date_entry)
+        
+        # Row action layouts for dynamic additions
+        act_col1, act_col2 = st.columns([1, 2])
+        with act_col1:
+            if st.button("➕ Add Another Single-Shift Location", use_container_width=True):
+                st.session_state.extra_shifts_count += 1
+                st.rerun()
+        with act_col2:
+            if st.session_state.extra_shifts_count > 0:
+                if st.button("🗑️ Clear Last Additional Entry Row", type="secondary"):
+                    st.session_state.extra_shifts_count -= 1
+                    st.rerun()
         
         st.markdown("---")
 
         if st.button("Process & Submit Timesheet", type="primary", use_container_width=True):
+            # Validation Flags
+            has_errors = False
+            
             if not employee_name.strip() or employee_name == "Enter your name":
                 st.error("⚠️ Please fill in your name.")
+                has_errors = True
             elif selected_dropdown == "Select the Location":
                 st.error("⚠️ Please select a valid primary work location.")
-            elif selected_dropdown == "Other (Type Below)" and not final_location:
-                st.error("⚠️ Please type your custom primary location name in the text box.")
+                has_errors = True
             elif not date_range or (isinstance(date_range, list) and len(date_range) == 0):
                 st.warning("ℹ️ Please select at least one date for your primary range.")
-            elif has_additional and additional_dropdown == "Select the Location":
-                st.error("⚠️ Please select a valid location for your additional shift block.")
-            elif has_additional and additional_dropdown == "Other (Type Below)" and not final_additional_location:
-                st.error("⚠️ Please type your custom additional location name in the text box.")
-            elif has_additional and (not additional_date_range or (isinstance(additional_date_range, list) and len(additional_date_range) == 0)):
-                st.warning("ℹ️ Please select at least one date for your additional range.")
-            else:
-                # --- 1. Process Primary Range (Safely checked using clean tab structures) ---
+                has_errors = True
+                
+            # Dynamic Row Iteration validation checks
+            for idx, loc_check in enumerate(extra_locations_selected):
+                if loc_check == "Select the Location":
+                    st.error(f"⚠️ Please select a valid location site for Extra Shift #{idx+1}.")
+                    has_errors = True
+            
+            if not has_errors:
+                # --- 1. Process Primary Range ---
                 if isinstance(date_range, (list, tuple)):
                     if len(date_range) == 2:
                         start_date, end_date = date_range[0], date_range[1]
@@ -191,45 +211,17 @@ elif st.session_state.current_role == "EMPLOYEE":
                     start_date = date_range
                     end_date = start_date
 
-                # Generate main array tracking dates
                 delta = end_date - start_date
                 generated_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
                 
-                # --- 2. Process Additional Range if selected ---
-                additional_dates = []
-                
-                if has_additional:
-                    if additional_date_range is None:
-                        st.error("⚠️ No additional dates selected.")
-                        st.stop()
-                
-                    if not isinstance(additional_date_range, list):
-                        additional_date_range = [additional_date_range]
-
-                    if len(additional_date_range) == 1:
-                        add_start = additional_date_range[0]
-                        add_end = additional_date_range[0]
-                    elif len(additional_date_range) == 2:
-                        add_start, add_end = additional_date_range
-                    else:
-                        st.error("⚠️ Invalid additional date selection.")
-                        st.stop()
-
-                    if not add_start or not add_end:
-                        st.error("⚠️ Additional dates missing.")
-                        st.stop()
-                
-                    add_delta = add_end - add_start
-                    additional_dates = [add_start + timedelta(days=i) for i in range(add_delta.days + 1)]
-                            
-                # --- 3. Database Insertion Run ---
+                # --- 2. Database Insertion Run ---
                 conn = get_db_connection()
                 if conn:
                     try:
                         cursor = conn.cursor()
                         success_count = 0
                         
-                        # Process Main Date Range (Skips weekends automatically)
+                        # Process Main Range List Array (Skips weekends automatically)
                         for single_date in generated_dates:
                             if single_date.weekday() in [5, 6]:
                                 continue
@@ -239,26 +231,33 @@ elif st.session_state.current_role == "EMPLOYEE":
                             VALUES (%s, %s, %s)
                             ON DUPLICATE KEY UPDATE location = VALUES(location);
                             """
-                            cursor.execute(query, (employee_name.strip(), single_date, final_location))
+                            cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown))
                             success_count += 1
                             
-                        # Process Additional Date Range if active (Skips weekends automatically)
-                        if has_additional:
-                            for single_date in additional_dates:
-                                if single_date.weekday() in [5, 6]:
-                                    continue
-                                    
-                                query = """
-                                INSERT INTO daily_records (employee_name, work_date, location)
-                                VALUES (%s, %s, %s)
-                                ON DUPLICATE KEY UPDATE location = VALUES(location);
-                                """
-                                cursor.execute(query, (employee_name.strip(), single_date, final_additional_location))
-                                success_count += 1
+                        # Process dynamically added extra single shifts loop
+                        for idx in range(len(extra_locations_selected)):
+                            chosen_loc = extra_locations_selected[idx]
+                            chosen_date = extra_dates_selected[idx]
+                            
+                            # Skip if weekend shifts shouldn't be counted, or leave out restriction if allowed
+                            if chosen_date.weekday() in [5, 6]:
+                                continue
+                                
+                            query = """
+                            INSERT INTO daily_records (employee_name, work_date, location)
+                            VALUES (%s, %s, %s)
+                            ON DUPLICATE KEY UPDATE location = VALUES(location);
+                            """
+                            cursor.execute(query, (employee_name.strip(), chosen_date, chosen_loc))
+                            success_count += 1
                                 
                         conn.commit()
-                        st.success(f"🎉 Successfully logged {success_count} total days for {employee_name} into your live data pools!")
+                        st.success(f"🎉 Successfully logged {success_count} total days for {employee_name} into your database records!")
                         st.balloons()
+                        
+                        # Reset extra count state to clean the workspace for next submission run
+                        st.session_state.extra_shifts_count = 0
+                        
                     except mysql.connector.Error as err:
                         st.error(f"❌ Database error: {err}")
                     finally:
