@@ -60,23 +60,6 @@ def format_time_string(val):
     except ValueError:
         return str(val).strip()
 
-# --- VERIFY CREDENTIALS VIA DATABASE ---
-def verify_login(email, password):
-    conn = get_db_connection()
-    if conn:
-        try:
-            cursor = conn.cursor(dictionary=True)
-            query = "SELECT role, full_name FROM users WHERE email = %s AND password = %s"
-            cursor.execute(query, (email.strip().lower(), password))
-            user = cursor.fetchone()
-            return user
-        except mysql.connector.Error as err:
-            st.error(f"⚠️ Login lookup failure: {err}")
-        finally:
-            cursor.close()
-            conn.close()
-    return None
-
 # --- SESSION STATE INITIALIZATION ---
 if "auth_status" not in st.session_state:
     st.session_state.auth_status = False
