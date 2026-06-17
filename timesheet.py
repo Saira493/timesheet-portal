@@ -392,4 +392,64 @@ elif st.session_state.auth_status and st.session_state.current_role == "MANAGER"
         df['Month_Year'] = pd.to_datetime(df['work_date']).dt.strftime('%B %Y')
         
         status_results = df['work_date'].apply(calculate_billable_status)
-        df['Is Payable'] = [res[0] for res in status_results
+        df['Is Payable'] = [res[0] for res in status_results]
+        df['Day Categorization'] = [res[1] for res in status_results]
+        
+        df['start_time'] = df['start_time'].apply(format_time_string)
+        df['end_time'] = df['end_time'].apply(format_time_string)
+        
+        def parse_hours_worked(row):
+            try:
+                st_str = format_time_string(row['start_time'])
+                en_str = format_time_string(row['end_time'])
+                if st_str == "-" or en_str == "-":
+                    return 0
+                t1 = datetime.strptime(st_str, "%H:%M")
+                t2 = datetime.strptime(en_str, "%H:%M")
+                return round((t2 - t1).total_seconds() / 3600.0, 2)
+            except Exception:
+                return 0
+                
+        df['Hours Logged'] = df.apply(parse_hours_worked, axis=1)
+        
+        unique_employees = sorted(list(df['employee_name'].unique()))
+        unique_months = sorted(list(df['Month_Year'].unique()), key=lambda x: datetime.strptime(x, "%B %Y"), reverse=True)
+        
+        filt_col1, filt_col2 = st.columns(2)
+        with filt_col1:
+            selected_emp = st.selectbox("👤 Select Employee Profile:", unique_employees)
+        with filt_col2:
+            selected_month = st.selectbox("📅 Filter by Payroll Month:", unique_months)
+            
+        f_df = df[(df['employee_name'] == selected_emp) & (df['Month_Year'] == selected_month)].copy()
+        
+        st.markdown(f"## 📊 Breakdown for {selected_emp} during {selected_month}")
+        
+        total_days = len(f_df)
+        payable_days = len(f_df[(f_df['Is Payable'] == True) & (f_df['location'] != "Holidays (Day off)")])
+        holiday_days = len(f_df[f_df['location'] == "Holidays (Day off)"])
+        excluded_days = max(0, total_days - payable_days - holiday_days)
+        
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric("📅 Total Days Logged", f"{total_days} Days")
+        kpi2.metric("💰 Approved Payable Days", f"{payable_days} Days")
+        kpi3.metric("🏖️ Holidays / Days Off", f"{holiday_days} Days")
+        kpi4.metric("🛑 Excluded (Weekends / Holidays)", f"{excluded_days} Days")
+        
+        st.markdown("### Approved Payroll Summary Table (Site Hours Overview)")
+        summary_pivot = f_df.groupby('location').agg(
+            Entries_Logged=('location', 'count'),
+            Total_Hours_Tracked=('Hours Logged', 'sum')
+        ).reset_index()
+        summary_pivot.columns = ['UK Work Location Site / Status', 'Total Shift Entries Logged', 'Total Hours Tracked']
+        st.dataframe(summary_pivot, use_container_width=True, hide_index=True)
+        
+        csv_data = f_df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download This Filtered Report to CSV", data=csv_data, file_name=f"Payroll_{selected_emp}_{selected_month.replace(' ', '_')}.csv", mime='text/csv', use_container_width=True)
+        
+        with st.expander("🔍 In-Depth Shift Audit Log (Detailed Shift Windows)", expanded=True):
+            audit_display = f_df[['work_date', 'location', 'start_time', 'end_time', 'Hours Logged', 'Day Categorization']].copy()
+            audit_display.columns = ['Calendar Date', 'Location Site / Status', 'Start Time', 'End Time', 'Hours Logged', 'Payroll Classification']
+            st.dataframe(audit_display, use_container_width=True, hide_index=True)
+    else:
+        st.info("ℹ️ No entries have been submitted to the logs table yet.")
