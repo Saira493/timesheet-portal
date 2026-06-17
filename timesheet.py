@@ -44,7 +44,6 @@ def calculate_billable_status(input_date):
 if "current_role" not in st.session_state:
     st.session_state.current_role = "NONE"
 
-# Counters for dynamic row additions
 if "extra_shifts_count" not in st.session_state:
     st.session_state.extra_shifts_count = 0
 
@@ -142,7 +141,8 @@ elif st.session_state.current_role == "EMPLOYEE":
             st.write("⏰ **End Time:**")
             p_end = st.time_input("End", value=time(17, 0), key="p_end_time", label_visibility="collapsed")
         
-        # --- 2. DEDICATED HOLIDAY SECTION ---
+        # --- 2. HOLIDAY / DAY OFF SECTION ---
+        st.markdown("---")
         st.markdown("#### **Holiday / DayOff (Optional)**")
         
         holiday_dates_selected = []
@@ -151,10 +151,9 @@ elif st.session_state.current_role == "EMPLOYEE":
             h_col1, h_col2 = st.columns([2, 2])
             with h_col1:
                 h_date = st.date_input(
-                    f"Select single date:",
+                    f"Select Holiday Date #{h+1}:",
                     value=datetime.now().date(),
-                    key=f"holiday_date_{h}",
-                    label_visibility="collapsed" if h > 0 else "visible"
+                    key=f"holiday_date_{h}"
                 )
                 holiday_dates_selected.append(h_date)
             with h_col2:
@@ -171,10 +170,10 @@ elif st.session_state.current_role == "EMPLOYEE":
                     st.session_state.holiday_days_count -= 1
                     st.rerun()
 
-        # --- 3. DYNAMIC EXTRA SINGLE SHIFTS LIST (WITH TIME PICKERS) ---
+        # --- 3. DYNAMIC EXTRA SINGLE SHIFTS LIST ---
         st.markdown("---")
         st.markdown("#### **Additional Individual Shifts**")
-        st.write("Need to add separate individual single days or log split shifts? Use the time options below.")
+        st.write("Log split site shifts or single standalone custom working dates below.")
         
         extra_locations_selected = []
         extra_dates_selected = []
@@ -182,42 +181,38 @@ elif st.session_state.current_role == "EMPLOYEE":
         extra_end_times = []
         
         for i in range(st.session_state.extra_shifts_count):
-            # Dynamic grid spacing split into 4 cleanly styled dashboard columns
+            st.markdown(f"##### **Extra Shift Entry #{i+1}**")
             add_col1, add_col2, add_col3, add_col4 = st.columns([2, 2, 1, 1])
             
             with add_col1:
                 loc_entry = st.selectbox(
-                    f"📍 Select Location:", 
+                    f"Select Location for Shift #{i+1}:", 
                     options=locations_list, 
-                    key=f"extra_loc_{i}",
-                    label_visibility="collapsed" if i > 0 else "visible"
+                    key=f"extra_loc_{i}"
                 )
                 extra_locations_selected.append(loc_entry)
                     
             with add_col2:
                 date_entry = st.date_input(
-                    f"📅 Select Single Date:", 
+                    f"Select Single Date for Shift #{i+1}:", 
                     value=datetime.now().date(), 
-                    key=f"extra_date_{i}",
-                    label_visibility="collapsed" if i > 0 else "visible"
+                    key=f"extra_date_{i}"
                 )
                 extra_dates_selected.append(date_entry)
                 
             with add_col3:
                 t_start = st.time_input(
-                    "⏰ Start:",
+                    f"Start Time #{i+1}:",
                     value=time(9, 0),
-                    key=f"extra_start_{i}",
-                    label_visibility="collapsed" if i > 0 else "visible"
+                    key=f"extra_start_{i}"
                 )
                 extra_start_times.append(t_start)
                 
             with add_col4:
                 t_end = st.time_input(
-                    "⏰ End:",
+                    f"End Time #{i+1}:",
                     value=time(17, 0),
-                    key=f"extra_end_{i}",
-                    label_visibility="collapsed" if i > 0 else "visible"
+                    key=f"extra_end_{i}"
                 )
                 extra_end_times.append(t_end)
         
@@ -243,12 +238,12 @@ elif st.session_state.current_role == "EMPLOYEE":
                 has_errors = True
                 
             if not primary_is_active and st.session_state.extra_shifts_count == 0 and st.session_state.holiday_days_count == 0:
-                st.error("⚠️ Please enter a primary work location, add a holiday date, or log an individual shift row.")
+                st.error("⚠️ Please choose a primary location, add a holiday date, or use an additional shift row.")
                 has_errors = True
                 
             for idx, loc_check in enumerate(extra_locations_selected):
                 if loc_check == "Select the Location":
-                    st.error(f"⚠️ Please select a valid location site for entry row #{idx+1}.")
+                    st.error(f"⚠️ Please choose a valid work site location for extra entry row #{idx+1}.")
                     has_errors = True
             
             if not has_errors:
@@ -277,7 +272,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                         cursor = conn.cursor()
                         success_count = 0
                         
-                        # A. Process Main Range
+                        # A. Save Primary Bulk Block (Handles safety update adjustments automatically)
                         if primary_is_active:
                             for single_date in generated_dates:
                                 if single_date.weekday() in [5, 6]:
@@ -286,43 +281,43 @@ elif st.session_state.current_role == "EMPLOYEE":
                                 query = """
                                 INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
                                 VALUES (%s, %s, %s, %s, %s)
-                                ON DUPLICATE KEY UPDATE location = VALUES(location), start_time = VALUES(start_time), end_time = VALUES(end_time);
+                                ON DUPLICATE KEY UPDATE end_time = VALUES(end_time);
                                 """
                                 cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown, str(p_start), str(p_end)))
                                 success_count += 1
                         
-                        # B. Process Holiday Dates Section
+                        # B. Save Dedicated Holidays Section
                         for h_date in holiday_dates_selected:
                             query = """
                             INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
                             VALUES (%s, %s, %s, NULL, NULL)
-                            ON DUPLICATE KEY UPDATE location = VALUES(location), start_time = NULL, end_time = NULL;
+                            ON DUPLICATE KEY UPDATE location = VALUES(location);
                             """
                             cursor.execute(query, (employee_name.strip(), h_date, "Holidays (Day off)"))
                             success_count += 1
                             
-                        # C. Process Extra Split Shifts Row
+                        # C. Save Additional Custom/Split Shifts (Allows distinct location variations cleanly)
                         for idx in range(len(extra_locations_selected)):
                             chosen_loc = extra_locations_selected[idx]
                             chosen_date = extra_dates_selected[idx]
                             c_start = extra_start_times[idx]
                             c_end = extra_end_times[idx]
                                 
-                            # Dropping composite constraint keys by handling duplicate records inside backend logic
                             query = """
                             INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
-                            VALUES (%s, %s, %s, %s, %s);
+                            VALUES (%s, %s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE end_time = VALUES(end_time);
                             """
                             cursor.execute(query, (employee_name.strip(), chosen_date, chosen_loc, str(c_start), str(c_end)))
                             success_count += 1
                                 
                         conn.commit()
-                        st.success(f"🎉 Successfully logged {success_count} entries for {employee_name} into database!")
+                        st.success(f"🎉 Timesheet submitted completely! Saved {success_count} entries for {employee_name}.")
                         st.balloons()
                         
                         st.session_state.extra_shifts_count = 0
                         st.session_state.holiday_days_count = 0
-                        st.rerun()
+                        #st.rerun()
                         
                     except mysql.connector.Error as err:
                         st.error(f"❌ Database error: {err}")
@@ -331,7 +326,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                         conn.close()
 
 # ==========================================
-# SCREEN 3: THE BOSS MONITORING DASHBOARD
+# SCREEN 3: MANAGEMENT DASHBOARD
 # ==========================================
 elif st.session_state.current_role == "MANAGER":
     col_title, col_logout = st.columns([5, 1])
@@ -385,12 +380,11 @@ elif st.session_state.current_role == "MANAGER":
         if selected_emp and selected_month:
             filtered_df = df[(df['employee_name'] == selected_emp) & (df['Month_Year'] == selected_month)].copy()
             
-            # Formulate dynamic duration arithmetic metrics safely
+            # Safe time calculations
             def compute_hours(row):
                 if pd.isna(row['start_time']) or pd.isna(row['end_time']) or row['location'] == "Holidays (Day off)":
                     return 0.0
                 try:
-                    # Handle both timedelta structures and string conversions gracefully
                     t1 = datetime.strptime(str(row['start_time']), "%H:%M:%S")
                     t2 = datetime.strptime(str(row['end_time']), "%H:%M:%S")
                     return max(0.0, (t2 - t1).total_seconds() / 3600.0)
@@ -402,7 +396,7 @@ elif st.session_state.current_role == "MANAGER":
             work_payable_df = filtered_df[(filtered_df['Is Payable'] == True) & (filtered_df['location'] != "Holidays (Day off)")]
             holiday_df = filtered_df[filtered_df['location'] == "Holidays (Day off)"]
             
-            # CRITICAL UPDATE: Calculate distinct calendar days to keep split shifts counted as a single day
+            # DISTINCT DAYS EVALUATION: Evaluates unique calendar dates so multi-site split shifts don't blow up the counts
             total_days_logged = filtered_df['work_date'].nunique()
             total_payable_days = work_payable_df['work_date'].nunique()
             total_holiday_days = holiday_df['work_date'].nunique()
@@ -413,13 +407,11 @@ elif st.session_state.current_role == "MANAGER":
             m1.metric("📅 Total Days Logged", f"{total_days_logged} Days")
             m2.metric("💰 Approved Payable Days", f"{total_payable_days} Days")
             m3.metric("🏖️ Holidays / Days Off", f"{total_holiday_days} Days")
-            m4.metric("🛑 Excluded (Weekends / Holidays)", f"{total_excluded_days} Days")
+            m4.metric("🛑 Excluded (Weekends / Bank Holidays)", f"{total_excluded_days} Days")
             
             st.write("")
             
             st.markdown("#### **Approved Payroll Summary Table (Site Hours Overview)**")
-            
-            # Displays precise summary of locations and hours
             summary_df = filtered_df.groupby('location').agg({'work_date': 'count', 'Hours_Worked': 'sum'}).reset_index()
             summary_df.columns = ['UK Work Location Site / Status', 'Total Shift Entries Logged', 'Total Hours Tracked']
             
