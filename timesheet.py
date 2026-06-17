@@ -3,7 +3,6 @@ import mysql.connector
 import pandas as pd
 import holidays
 from datetime import datetime, timedelta, time
-import re
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Timesheet Portal", page_icon="📅", layout="wide")
@@ -324,7 +323,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                         conn.close()
 
 # ==========================================
-# SCREEN 3: MANAGEMENT DASHBOARD (ADVANCED HOUR PARSING)
+# SCREEN 3: MANAGEMENT DASHBOARD (FIXED)
 # ==========================================
 elif st.session_state.current_role == "MANAGER":
     col_title, col_logout = st.columns([5, 1])
@@ -378,47 +377,25 @@ elif st.session_state.current_role == "MANAGER":
         if selected_emp and selected_month:
             filtered_df = df[(df['employee_name'] == selected_emp) & (df['Month_Year'] == selected_month)].copy()
             
-            # Smart helper to extract integers from fields like "9 hours", "17 hours", or "09:30:00"
-            def clean_time_string(val):
-                if pd.isna(val) or val is None:
-                    return None
-                val_str = str(val).strip().lower()
-                
-                # Check for "X hours" / "X hour" format
-                match = re.search(r'(\d+)\s*hour', val_str)
-                if match:
-                    hr = int(match.group(1))
-                    return time(hr, 0, 0)
-                
-                # Try standard timestamp formats
-                for fmt in ("%H:%M:%S", "%H:%M"):
-                    try:
-                        return datetime.strptime(val_str, fmt).time()
-                    except ValueError:
-                        continue
-                return None
-
-            # Compute precise duration for each row safely
+            # Compute precise duration for each distinct shift entry
             def compute_hours(row):
-                if row['location'] == "Holidays (Day off)":
+                if pd.isna(row['start_time']) or pd.isna(row['end_time']) or row['location'] == "Holidays (Day off)":
                     return 0.0
-                    
-                t1_obj = clean_time_string(row['start_time'])
-                t2_obj = clean_time_string(row['end_time'])
-                
-                if t1_obj and t2_obj:
-                    # Convert to placeholder dates to compute duration delta
-                    dummy_d = datetime.today().date()
-                    dt1 = datetime.combine(dummy_d, t1_obj)
-                    dt2 = datetime.combine(dummy_d, t2_obj)
-                    return max(0.0, (dt2 - dt1).total_seconds() / 3600.0)
-                return 0.0
+                try:
+                    t1 = datetime.strptime(str(row['start_time']), "%H:%M:%S")
+                    t2 = datetime.strptime(str(row['end_time']), "%H:%M:%S")
+                    return max(0.0, (t2 - t1).total_seconds() / 3600.0)
+                except:
+                    return 0.0
 
             filtered_df['Hours_Worked'] = filtered_df.apply(compute_hours, axis=1)
             
+            # Split out regular work from holidays
             work_payable_df = filtered_df[(filtered_df['Is Payable'] == True) & (filtered_df['location'] != "Holidays (Day off)")]
             holiday_df = filtered_df[filtered_df['location'] == "Holidays (Day off)"]
             
+            # METRIC CORRECTION FOR MULTI-SITE SPLITS: 
+            # Total logged rows is accurate, but unique days avoids double-counting calendar days for metrics
             total_shifts_logged = len(filtered_df)
             total_payable_days = work_payable_df['work_date'].nunique()
             total_holiday_days = holiday_df['work_date'].nunique()
@@ -439,8 +416,6 @@ elif st.session_state.current_role == "MANAGER":
             summary_df.columns = ['UK Work Location Site / Status', 'Total Shift Entries Logged', 'Total Hours Tracked']
             
             if not summary_df.empty:
-                # Format tracked hours neatly to 2 decimal points
-                summary_df['Total Hours Tracked'] = summary_df['Total Hours Tracked'].map('{:,.2f}'.format)
                 st.dataframe(summary_df, use_container_width=True, hide_index=True)
             else:
                 st.warning(f"This staff user has 0 records within the selection parameter month.")
