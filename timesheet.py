@@ -40,6 +40,29 @@ def calculate_billable_status(input_date):
         
     return True, "Payable Workday"
 
+# --- HELPER TO CLEAN AND FORMAT TIME VALUES ---
+def format_time_string(val):
+    if pd.isna(val) or val is None or str(val).strip() == "" or "NULL" in str(val).upper():
+        return "-"
+    
+    val_str = str(val).strip().lower()
+    # Strip out trailing words like 'hours' or 'hour' if they exist in the DB
+    val_str = val_str.replace("hours", "").replace("hour", "").strip()
+    
+    try:
+        # Check if it's already a clean HH:MM:SS or HH:MM format
+        if ":" in val_str:
+            parts = val_str.split(":")
+            hr = int(parts[0])
+            mn = int(parts[1])
+            return f"{hr:02d}:{mn:02d}"
+        else:
+            # Handle standalone integer hours (e.g., "9" or "13")
+            hr = int(float(val_str))
+            return f"{hr:02d}:00"
+    except ValueError:
+        return str(val)
+
 # --- SESSION STATE INITIALIZATION ---
 if "current_role" not in st.session_state:
     st.session_state.current_role = "NONE"
@@ -94,7 +117,7 @@ if st.session_state.current_role == "NONE":
                 st.rerun()
 
 # ==========================================
-# SCREEN 2: EMPLOYEE TIMESHEET FORM (FIXED SHIFT INSERTION)
+# SCREEN 2: EMPLOYEE TIMESHEET FORM
 # ==========================================
 elif st.session_state.current_role == "EMPLOYEE":
     left_space, center_content, right_space = st.columns([1, 3, 1])
@@ -272,22 +295,22 @@ elif st.session_state.current_role == "EMPLOYEE":
                         cursor = conn.cursor()
                         success_count = 0
                         
-                        # FIXED: IGNORE keyword avoids failing but still allows complete unique row inserts
+                        # Direct regular inserts to ensure multiple distinct records save successfully
                         if primary_is_active:
                             for single_date in generated_dates:
                                 if single_date.weekday() in [5, 6]:
                                     continue
                                     
                                 query = """
-                                INSERT IGNORE INTO daily_records (employee_name, work_date, location, start_time, end_time)
+                                INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
                                 VALUES (%s, %s, %s, %s, %s);
                                 """
-                                cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown, str(p_start), str(p_end)))
+                                cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown, p_start.strftime("%H:%M"), p_end.strftime("%H:%M")))
                                 success_count += 1
                         
                         for h_date in holiday_dates_selected:
                             query = """
-                            INSERT IGNORE INTO daily_records (employee_name, work_date, location, start_time, end_time)
+                            INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
                             VALUES (%s, %s, %s, NULL, NULL);
                             """
                             cursor.execute(query, (employee_name.strip(), h_date, "Holidays (Day off)"))
@@ -300,10 +323,10 @@ elif st.session_state.current_role == "EMPLOYEE":
                             c_end = extra_end_times[idx]
                                 
                             query = """
-                            INSERT IGNORE INTO daily_records (employee_name, work_date, location, start_time, end_time)
+                            INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
                             VALUES (%s, %s, %s, %s, %s);
                             """
-                            cursor.execute(query, (employee_name.strip(), chosen_date, chosen_loc, str(c_start), str(c_end)))
+                            cursor.execute(query, (employee_name.strip(), chosen_date, chosen_loc, c_start.strftime("%H:%M"), c_end.strftime("%H:%M")))
                             success_count += 1
                                 
                         conn.commit()
@@ -321,7 +344,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                         conn.close()
 
 # ==========================================
-# SCREEN 3: MANAGEMENT DASHBOARD (DISTINCT ENTRIES DISPLAY)
+# SCREEN 3: MANAGEMENT DASHBOARD (DISTINCT DISPLAY)
 # ==========================================
 elif st.session_state.current_role == "MANAGER":
     col_title, col_logout = st.columns([5, 1])
@@ -359,6 +382,10 @@ elif st.session_state.current_role == "MANAGER":
         df['Is Payable'] = [res[0] for res in status_results]
         df['Day Categorization'] = [res[1] for res in status_results]
         
+        # Clean up database hours into proper 24hr strings (e.g., "09:00" and "13:00")
+        df['start_time'] = df['start_time'].apply(format_time_string)
+        df['end_time'] = df['end_time'].apply(format_time_string)
+        
         st.markdown("### 🔍 Filter Work Records")
         filter_col1, filter_col2 = st.columns(2)
         
@@ -378,7 +405,7 @@ elif st.session_state.current_role == "MANAGER":
             work_payable_df = filtered_df[(filtered_df['Is Payable'] == True) & (filtered_df['location'] != "Holidays (Day off)")]
             holiday_df = filtered_df[filtered_df['location'] == "Holidays (Day off)"]
             
-            # Metric rule: Collapse same-day multi-shifts into 1 total calendar day
+            # THE CALENDAR DAY RULE: Collapse all same-day split shifts into 1 calendar day total for cards
             total_days_logged = filtered_df['work_date'].nunique()
             total_payable_days = work_payable_df['work_date'].nunique()
             total_holiday_days = holiday_df['work_date'].nunique()
@@ -410,7 +437,7 @@ elif st.session_state.current_role == "MANAGER":
             
             st.write("")
             
-            # --- FULL LOG SEES EVERYTHING ---
+            # --- FULL AUDIT LOG (SHOWS EVERY SPLIT LOCATION ROW) ---
             with st.expander("🔍 In-Depth Shift Audit Log (Detailed Shift Windows)", expanded=True):
                 audit_display_df = filtered_df[['work_date', 'location', 'start_time', 'end_time', 'Day Categorization']].copy()
                 audit_display_df.columns = ['Calendar Date', 'Location Site / Status', 'Start Time', 'End Time', 'Payroll Classification']
