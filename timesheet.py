@@ -43,7 +43,7 @@ def calculate_billable_status(input_date):
 def format_time_string(val):
     if pd.isna(val) or val is None or str(val).strip() == "" or "NULL" in str(val).upper():
         return "-"
-    val_str = str(val).strip().lower().replace("0 days", "").replace("hours", "").replace("hour", "").strip()
+    val_str = str(val).strip().lower().replace("0 days", "").strip()
     try:
         if ":" in val_str:
             parts = val_str.split(":")
@@ -99,7 +99,6 @@ if "extra_shifts_count" not in st.session_state:
 if "holiday_days_count" not in st.session_state:
     st.session_state.holiday_days_count = 0
 
-# Flow trackers for password resetting
 if "force_password_change" not in st.session_state:
     st.session_state.force_password_change = False
 if "matched_user_record" not in st.session_state:
@@ -152,8 +151,6 @@ elif "_LOGIN" in st.session_state.current_role and not st.session_state.auth_sta
     with center_card:
         st.write("")
         with st.container(border=True):
-            
-            # Sub-step A: Standard Verification Fields
             if not st.session_state.force_password_change:
                 st.markdown(f"### 🔐 {target_role.title()} Secure Sign-In")
                 with st.form("standard_login_form"):
@@ -185,7 +182,6 @@ elif "_LOGIN" in st.session_state.current_role and not st.session_state.auth_sta
                         st.session_state.current_role = "NONE"
                         st.rerun()
 
-            # Sub-step B: Force Custom Password Update Interface
             else:
                 st.markdown("### 🔄 Setup Custom Account Password")
                 st.warning(f"Hello {st.session_state.matched_user_record['full_name']}. For security reasons, you must change your password from the default 'admin123' configuration.")
@@ -250,7 +246,6 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
         with p_col3:
             p_end = st.time_input("End", value=time(17, 0), key="p_end_time")
         
-        # --- RESTORED: HOLIDAYS / DAYS OFF LOGIC SECTION ---
         st.markdown("---")
         st.markdown("#### **Holiday / DayOff (Optional)**")
         
@@ -272,7 +267,6 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                     st.session_state.holiday_days_count -= 1
                     st.rerun()
 
-        # --- RESTORED: ADDITIONAL INDIVIDUAL SHIFTS LOGIC SECTION ---
         st.markdown("---")
         st.markdown("#### **Additional Individual Shifts**")
         
@@ -321,24 +315,21 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                         cursor = conn.cursor()
                         success_count = 0
                         
-                        # Process Primary Bulk Entries
                         if primary_is_active:
                             start_date, end_date = date_range[0], date_range[1] if len(date_range) == 2 else date_range[0]
                             delta = end_date - start_date
                             for i in range(delta.days + 1):
                                 single_date = start_date + timedelta(days=i)
-                                if single_date.weekday() in [5, 6]: continue  # Automate weekend exclusions
+                                if single_date.weekday() in [5, 6]: continue  
                                 query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, %s, %s)"
                                 cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown, p_start.strftime("%H:%M"), p_end.strftime("%H:%M")))
                                 success_count += 1
                         
-                        # Process Holiday Dates
                         for h_date in holiday_dates_selected:
                             query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, NULL, NULL)"
                             cursor.execute(query, (employee_name.strip(), h_date, "Holidays (Day off)"))
                             success_count += 1
                         
-                        # Process Extra Shifts
                         for idx in range(len(extra_locations_selected)):
                             query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, %s, %s)"
                             cursor.execute(query, (employee_name.strip(), extra_dates_selected[idx], extra_locations_selected[idx], extra_start_times[idx].strftime("%H:%M"), extra_end_times[idx].strftime("%H:%M")))
@@ -398,20 +389,6 @@ elif st.session_state.auth_status and st.session_state.current_role == "MANAGER"
         df['start_time'] = df['start_time'].apply(format_time_string)
         df['end_time'] = df['end_time'].apply(format_time_string)
         
-        def parse_hours_worked(row):
-            try:
-                st_str = format_time_string(row['start_time'])
-                en_str = format_time_string(row['end_time'])
-                if st_str == "-" or en_str == "-":
-                    return 0
-                t1 = datetime.strptime(st_str, "%H:%M")
-                t2 = datetime.strptime(en_str, "%H:%M")
-                return round((t2 - t1).total_seconds() / 3600.0, 2)
-            except Exception:
-                return 0
-                
-        df['Hours Logged'] = df.apply(parse_hours_worked, axis=1)
-        
         unique_employees = sorted(list(df['employee_name'].unique()))
         unique_months = sorted(list(df['Month_Year'].unique()), key=lambda x: datetime.strptime(x, "%B %Y"), reverse=True)
         
@@ -425,31 +402,33 @@ elif st.session_state.auth_status and st.session_state.current_role == "MANAGER"
         
         st.markdown(f"## 📊 Breakdown for {selected_emp} during {selected_month}")
         
-        total_days = len(f_df)
-        payable_days = len(f_df[(f_df['Is Payable'] == True) & (f_df['location'] != "Holidays (Day off)")])
-        holiday_days = len(f_df[f_df['location'] == "Holidays (Day off)"])
+        # --- CALCULATE UNIQUE CALENDAR DAYS ---
+        total_days = f_df['work_date'].nunique()
+        payable_days = f_df[(f_df['Is Payable'] == True) & (f_df['location'] != "Holidays (Day off)")]['work_date'].nunique()
+        holiday_days = f_df[f_df['location'] == "Holidays (Day off)"]['work_date'].nunique()
         excluded_days = max(0, total_days - payable_days - holiday_days)
         
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.metric("📅 Total Days Logged", f"{total_days} Days")
+        kpi1.metric("📅 Total Unique Days Logged", f"{total_days} Days")
         kpi2.metric("💰 Approved Payable Days", f"{payable_days} Days")
         kpi3.metric("🏖️ Holidays / Days Off", f"{holiday_days} Days")
         kpi4.metric("🛑 Excluded (Weekends / Holidays)", f"{excluded_days} Days")
         
-        st.markdown("### Approved Payroll Summary Table (Site Hours Overview)")
+        # --- HOURS TRACKING REMOVED FROM SUMMARY PIVOT ---
+        st.markdown("### Approved Payroll Summary Table (Site Distribution)")
         summary_pivot = f_df.groupby('location').agg(
-            Entries_Logged=('location', 'count'),
-            Total_Hours_Tracked=('Hours Logged', 'sum')
+            Days_Logged=('work_date', 'nunique')
         ).reset_index()
-        summary_pivot.columns = ['UK Work Location Site / Status', 'Total Shift Entries Logged', 'Total Hours Tracked']
+        summary_pivot.columns = ['UK Work Location Site / Status', 'Total Unique Days Worked']
         st.dataframe(summary_pivot, use_container_width=True, hide_index=True)
         
         csv_data = f_df.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Download This Filtered Report to CSV", data=csv_data, file_name=f"Payroll_{selected_emp}_{selected_month.replace(' ', '_')}.csv", mime='text/csv', use_container_width=True)
         
-        with st.expander("🔍 In-Depth Shift Audit Log (Detailed Shift Windows)", expanded=True):
-            audit_display = f_df[['work_date', 'location', 'start_time', 'end_time', 'Hours Logged', 'Day Categorization']].copy()
-            audit_display.columns = ['Calendar Date', 'Location Site / Status', 'Start Time', 'End Time', 'Hours Logged', 'Payroll Classification']
+        # --- HOURS LOGGED EXPELLED FROM DETAILED AUDIT LOGS ---
+        with st.expander("🔍 In-Depth Shift Audit Log (Detailed Shifts Split)", expanded=True):
+            audit_display = f_df[['work_date', 'location', 'Day Categorization']].copy()
+            audit_display.columns = ['Calendar Date', 'Location Site / Status', 'Payroll Classification']
             st.dataframe(audit_display, use_container_width=True, hide_index=True)
     else:
         st.info("ℹ️ No entries have been submitted to the logs table yet.")
