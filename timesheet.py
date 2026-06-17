@@ -414,7 +414,6 @@ elif st.session_state.auth_status and st.session_state.current_role == "MANAGER"
         kpi3.metric("🏖️ Holidays / Days Off", f"{holiday_days} Days")
         kpi4.metric("🛑 Excluded (Weekends / Holidays)", f"{excluded_days} Days")
         
-        # --- HOURS TRACKING REMOVED FROM SUMMARY PIVOT ---
         st.markdown("### Approved Payroll Summary Table (Site Distribution)")
         summary_pivot = f_df.groupby('location').agg(
             Days_Logged=('work_date', 'nunique')
@@ -425,10 +424,10 @@ elif st.session_state.auth_status and st.session_state.current_role == "MANAGER"
         csv_data = f_df.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Download This Filtered Report to CSV", data=csv_data, file_name=f"Payroll_{selected_emp}_{selected_month.replace(' ', '_')}.csv", mime='text/csv', use_container_width=True)
         
-        # --- HOURS LOGGED EXPELLED FROM DETAILED AUDIT LOGS ---
+        # --- RESTORED: START TIME & END TIME DISPLAYED WITHOUT SUMMED HOURS ---
         with st.expander("🔍 In-Depth Shift Audit Log (Detailed Shifts Split)", expanded=True):
-            audit_display = f_df[['work_date', 'location', 'Day Categorization']].copy()
-            audit_display.columns = ['Calendar Date', 'Location Site / Status', 'Payroll Classification']
+            audit_display = f_df[['work_date', 'location', 'start_time', 'end_time', 'Day Categorization']].copy()
+            audit_display.columns = ['Calendar Date', 'Location Site / Status', 'Start Time', 'End Time', 'Payroll Classification']
             st.dataframe(audit_display, use_container_width=True, hide_index=True)
     else:
         st.info("ℹ️ No entries have been submitted to the logs table yet.")
