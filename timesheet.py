@@ -60,6 +60,23 @@ def format_time_string(val):
     except ValueError:
         return str(val).strip()
 
+# --- VERIFY CREDENTIALS VIA DATABASE ---
+def verify_login(email, password, expected_role):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            query = "SELECT role, full_name FROM users WHERE email = %s AND password = %s AND role = %s"
+            cursor.execute(query, (email.strip().lower(), password, expected_role))
+            user = cursor.fetchone()
+            return user
+        except mysql.connector.Error as err:
+            st.error(f"⚠️ Login lookup failure: {err}")
+        finally:
+            cursor.close()
+            conn.close()
+    return None
+
 # --- SESSION STATE INITIALIZATION ---
 if "auth_status" not in st.session_state:
     st.session_state.auth_status = False
@@ -78,10 +95,10 @@ if "holiday_days_count" not in st.session_state:
 
 
 # ==========================================
-# AUTHENTICATION GATE (LOGIN SCREEN)
+# SCREEN 1: IDENTITY SETUP (HOME SCREEN)
 # ==========================================
-if not st.session_state.auth_status:
-    left_space, center_card, right_space = st.columns([1, 1.5, 1])
+if st.session_state.current_role == "NONE" and not st.session_state.auth_status:
+    left_space, center_card, right_space = st.columns([1, 2, 1])
     
     with center_card:
         st.write("")
@@ -91,29 +108,79 @@ if not st.session_state.auth_status:
             st.image("logo.png", use_container_width=True)
             
         st.write("")
+        st.write("")
+        
+        with st.container(border=True):
+            col1, col2 = st.columns([1, 5])
+            with col1:
+                st.markdown("### 🛡️")
+            with col2:
+                st.markdown("**Manager Workspace**")
+                st.markdown("<span style='color: gray; font-size: 14px;'>View employee records, hours split, and payroll summaries.</span>", unsafe_allow_html=True)
+            
+            if st.button("Select as Manager", key="btn_manager", use_container_width=True):
+                st.session_state.current_role = "MANAGER_LOGIN"
+                st.rerun()
+
+        st.write("")
+
+        with st.container(border=True):
+            col1, col2 = st.columns([1, 5])
+            with col1:
+                st.markdown("### 👤")
+            with col2:
+                st.markdown("**Employee Workspace**")
+                st.markdown("<span style='color: gray; font-size: 14px;'>Log your daily work locations and submit timesheets seamlessly.</span>", unsafe_allow_html=True)
+                
+            if st.button("Select as Employee", key="btn_emp", use_container_width=True):
+                st.session_state.current_role = "EMPLOYEE_LOGIN"
+                st.rerun()
+
+# ==========================================
+# SCREEN 2: AUTHENTICATION GATE (SIGN-IN SCREEN)
+# ==========================================
+elif "_LOGIN" in st.session_state.current_role and not st.session_state.auth_status:
+    target_role = "MANAGER" if "MANAGER" in st.session_state.current_role else "EMPLOYEE"
+    
+    left_space, center_card, right_space = st.columns([1, 1.5, 1])
+    with center_card:
+        st.write("")
+        col_img_left, col_img_center, col_img_right = st.columns([1, 2, 1])
+        with col_img_center:
+            st.image("logo.png", use_container_width=True)
+            
+        st.write("")
         with st.form("login_gateway_form", clear_on_submit=False):
-            st.markdown("### 🔐 Timesheet Portal Secure Sign-In")
+            st.markdown(f"### 🔐 {target_role.title()} Secure Sign-In")
             input_email = st.text_input("📧 Email Address:", placeholder="name@company.com")
             input_password = st.text_input("🔑 Password:", type="password", placeholder="••••••••")
             
-            submit_login = st.form_submit_button("Authenticate & Log In", type="primary", use_container_width=True)
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                submit_login = st.form_submit_button("Authenticate & Log In", type="primary", use_container_width=True)
+            with col_btn2:
+                go_back = st.form_submit_button("↩️ Cancel & Go Back", use_container_width=True)
             
             if submit_login:
                 if not input_email or not input_password:
                     st.error("⚠️ Please fill out both email and password fields.")
                 else:
-                    user_record = verify_login(input_email, input_password)
+                    user_record = verify_login(input_email, input_password, target_role)
                     if user_record:
                         st.session_state.auth_status = True
                         st.session_state.current_role = user_record['role']
                         st.session_state.logged_user_name = user_record['full_name']
-                        st.success(f"🔓 Access Granted. Welcome back, {user_record['full_name']}!")
+                        st.success(f"🔓 Access Granted. Welcome, {user_record['full_name']}!")
                         st.rerun()
                     else:
-                        st.error("❌ Invalid Email Address or Password. Contact Admin.")
+                        st.error(f"❌ Invalid credentials for a {target_role.title()} account.")
+            
+            if go_back:
+                st.session_state.current_role = "NONE"
+                st.rerun()
 
 # ==========================================
-# SCREEN 2: EMPLOYEE TIMESHEET WORKSPACE
+# SCREEN 3: EMPLOYEE TIMESHEET WORKSPACE
 # ==========================================
 elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE":
     left_space, center_content, right_space = st.columns([1, 3, 1])
@@ -131,12 +198,9 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                 st.rerun()
                 
         st.markdown("---")
-        
-        # Pull profile full name automatically from authenticated session data
         employee_name = st.text_input("👤 Your Registered Work Name:", value=st.session_state.logged_user_name, disabled=True)
        
         st.markdown("### 📅 Add Your Worked Shifts")
-        
         locations_list = [
             "Select the Location", "Al-Khair Foundation", "Al-Khair Schools", 
             "BizAv Media Ltd", "Saks London", "Photocopiers Direct", 
@@ -172,8 +236,6 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
             with h_col1:
                 h_date = st.date_input(f"Select Holiday Date #{h+1}:", value=datetime.now().date(), key=f"holiday_date_{h}")
                 holiday_dates_selected.append(h_date)
-            with h_col2:
-                st.write("")
         
         h_act1, h_act2 = st.columns([1, 2])
         with h_act1:
@@ -188,7 +250,6 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
 
         st.markdown("---")
         st.markdown("#### **Additional Individual Shifts**")
-        st.write("Log split site shifts or single standalone custom working dates below.")
         
         extra_locations_selected = []
         extra_dates_selected = []
@@ -247,9 +308,6 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                         elif len(date_range) == 1:
                             start_date = date_range[0]
                             end_date = start_date
-                        else:
-                            st.error("⚠️ Please select a valid date range.")
-                            st.stop()
                     else:
                         start_date = date_range
                         end_date = start_date
@@ -295,7 +353,7 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                             success_count += 1
                                 
                         conn.commit()
-                        st.success(f"🎉 Timesheet submitted completely! Saved {success_count} entries for {employee_name}.")
+                        st.success(f"🎉 Timesheet submitted completely! Saved {success_count} entries.")
                         st.balloons()
                         
                         st.session_state.extra_shifts_count = 0
@@ -309,7 +367,7 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                         conn.close()
 
 # ==========================================
-# SCREEN 3: MANAGEMENT DASHBOARD WORKSPACE
+# SCREEN 4: MANAGEMENT DASHBOARD WORKSPACE
 # ==========================================
 elif st.session_state.auth_status and st.session_state.current_role == "MANAGER":
     col_title, col_logout = st.columns([5, 1])
