@@ -94,7 +94,7 @@ if st.session_state.current_role == "NONE":
                 st.rerun()
 
 # ==========================================
-# SCREEN 2: EMPLOYEE TIMESHEET FORM
+# SCREEN 2: EMPLOYEE TIMESHEET FORM (FIXED SHIFT INSERTION)
 # ==========================================
 elif st.session_state.current_role == "EMPLOYEE":
     left_space, center_content, right_space = st.columns([1, 3, 1])
@@ -272,24 +272,23 @@ elif st.session_state.current_role == "EMPLOYEE":
                         cursor = conn.cursor()
                         success_count = 0
                         
+                        # FIXED: IGNORE keyword avoids failing but still allows complete unique row inserts
                         if primary_is_active:
                             for single_date in generated_dates:
                                 if single_date.weekday() in [5, 6]:
                                     continue
                                     
                                 query = """
-                                INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
-                                VALUES (%s, %s, %s, %s, %s)
-                                ON DUPLICATE KEY UPDATE end_time = VALUES(end_time);
+                                INSERT IGNORE INTO daily_records (employee_name, work_date, location, start_time, end_time)
+                                VALUES (%s, %s, %s, %s, %s);
                                 """
                                 cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown, str(p_start), str(p_end)))
                                 success_count += 1
                         
                         for h_date in holiday_dates_selected:
                             query = """
-                            INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
-                            VALUES (%s, %s, %s, NULL, NULL)
-                            ON DUPLICATE KEY UPDATE location = VALUES(location);
+                            INSERT IGNORE INTO daily_records (employee_name, work_date, location, start_time, end_time)
+                            VALUES (%s, %s, %s, NULL, NULL);
                             """
                             cursor.execute(query, (employee_name.strip(), h_date, "Holidays (Day off)"))
                             success_count += 1
@@ -301,9 +300,8 @@ elif st.session_state.current_role == "EMPLOYEE":
                             c_end = extra_end_times[idx]
                                 
                             query = """
-                            INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
-                            VALUES (%s, %s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE end_time = VALUES(end_time);
+                            INSERT IGNORE INTO daily_records (employee_name, work_date, location, start_time, end_time)
+                            VALUES (%s, %s, %s, %s, %s);
                             """
                             cursor.execute(query, (employee_name.strip(), chosen_date, chosen_loc, str(c_start), str(c_end)))
                             success_count += 1
@@ -323,7 +321,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                         conn.close()
 
 # ==========================================
-# SCREEN 3: MANAGEMENT DASHBOARD (DAYS RULE)
+# SCREEN 3: MANAGEMENT DASHBOARD (DISTINCT ENTRIES DISPLAY)
 # ==========================================
 elif st.session_state.current_role == "MANAGER":
     col_title, col_logout = st.columns([5, 1])
@@ -342,7 +340,6 @@ elif st.session_state.current_role == "MANAGER":
     if conn:
         try:
             cursor = conn.cursor(dictionary=True)
-            # Fetch and sort so that multi-site splits show up cleanly grouped in order
             cursor.execute("SELECT employee_name, work_date, location, start_time, end_time FROM daily_records ORDER BY work_date DESC, start_time ASC")
             records = cursor.fetchall()
         except mysql.connector.Error as err:
@@ -378,11 +375,10 @@ elif st.session_state.current_role == "MANAGER":
         if selected_emp and selected_month:
             filtered_df = df[(df['employee_name'] == selected_emp) & (df['Month_Year'] == selected_month)].copy()
             
-            # Segregate shifts for clean metric analysis
             work_payable_df = filtered_df[(filtered_df['Is Payable'] == True) & (filtered_df['location'] != "Holidays (Day off)")]
             holiday_df = filtered_df[filtered_df['location'] == "Holidays (Day off)"]
             
-            # UNIQUE DAY RULE RE-APPLIED HERE: Multiple locations on same day collapse to 1 day worked
+            # Metric rule: Collapse same-day multi-shifts into 1 total calendar day
             total_days_logged = filtered_df['work_date'].nunique()
             total_payable_days = work_payable_df['work_date'].nunique()
             total_holiday_days = holiday_df['work_date'].nunique()
@@ -414,7 +410,7 @@ elif st.session_state.current_role == "MANAGER":
             
             st.write("")
             
-            # --- FULL LOG SHOWS EVERYTHING SEPARATELY ---
+            # --- FULL LOG SEES EVERYTHING ---
             with st.expander("🔍 In-Depth Shift Audit Log (Detailed Shift Windows)", expanded=True):
                 audit_display_df = filtered_df[['work_date', 'location', 'start_time', 'end_time', 'Day Categorization']].copy()
                 audit_display_df.columns = ['Calendar Date', 'Location Site / Status', 'Start Time', 'End Time', 'Payroll Classification']
