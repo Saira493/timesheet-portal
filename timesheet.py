@@ -46,26 +46,46 @@ def format_time_string(val):
         return "-"
     
     val_str = str(val).strip().lower()
-    # Strip out trailing words like 'hours' or 'hour' if they exist in the DB
-    val_str = val_str.replace("hours", "").replace("hour", "").strip()
+    val_str = val_str.replace("0 days", "").replace("hours", "").replace("hour", "").strip()
     
     try:
-        # Check if it's already a clean HH:MM:SS or HH:MM format
         if ":" in val_str:
             parts = val_str.split(":")
             hr = int(parts[0])
             mn = int(parts[1])
             return f"{hr:02d}:{mn:02d}"
         else:
-            # Handle standalone integer hours (e.g., "9" or "13")
             hr = int(float(val_str))
             return f"{hr:02d}:00"
     except ValueError:
-        return str(val)
+        return str(val).strip()
+
+# --- VERIFY CREDENTIALS VIA DATABASE ---
+def verify_login(email, password):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            query = "SELECT role, full_name FROM users WHERE email = %s AND password = %s"
+            cursor.execute(query, (email.strip().lower(), password))
+            user = cursor.fetchone()
+            return user
+        except mysql.connector.Error as err:
+            st.error(f"⚠️ Login lookup failure: {err}")
+        finally:
+            cursor.close()
+            conn.close()
+    return None
 
 # --- SESSION STATE INITIALIZATION ---
+if "auth_status" not in st.session_state:
+    st.session_state.auth_status = False
+
 if "current_role" not in st.session_state:
     st.session_state.current_role = "NONE"
+
+if "logged_user_name" not in st.session_state:
+    st.session_state.logged_user_name = ""
 
 if "extra_shifts_count" not in st.session_state:
     st.session_state.extra_shifts_count = 0
@@ -73,67 +93,64 @@ if "extra_shifts_count" not in st.session_state:
 if "holiday_days_count" not in st.session_state:
     st.session_state.holiday_days_count = 0
 
+
 # ==========================================
-# SCREEN 1: IDENTITY SETUP (HOME SCREEN)
+# AUTHENTICATION GATE (LOGIN SCREEN)
 # ==========================================
-if st.session_state.current_role == "NONE":
-    left_space, center_card, right_space = st.columns([1, 2, 1])
+if not st.session_state.auth_status:
+    left_space, center_card, right_space = st.columns([1, 1.5, 1])
     
     with center_card:
         st.write("")
         st.write("")
-        
         col_img_left, col_img_center, col_img_right = st.columns([1, 2, 1])
         with col_img_center:
             st.image("logo.png", use_container_width=True)
             
         st.write("")
-        st.write("")
-        
-        with st.container(border=True):
-            col1, col2 = st.columns([1, 5])
-            with col1:
-                st.markdown("### 🛡️")
-            with col2:
-                st.markdown("**Manager**")
-                st.markdown("<span style='color: gray; font-size: 14px;'>View employee records, hours split, and payroll summaries.</span>", unsafe_allow_html=True)
+        with st.form("login_gateway_form", clear_on_submit=False):
+            st.markdown("### 🔐 Timesheet Portal Secure Sign-In")
+            input_email = st.text_input("📧 Email Address:", placeholder="name@company.com")
+            input_password = st.text_input("🔑 Password:", type="password", placeholder="••••••••")
             
-            if st.button("Select as Manager", key="btn_manager", use_container_width=True):
-                st.session_state.current_role = "MANAGER"
-                st.rerun()
-
-        st.write("")
-
-        with st.container(border=True):
-            col1, col2 = st.columns([1, 5])
-            with col1:
-                st.markdown("### 👤")
-            with col2:
-                st.markdown("**Employee**")
-                st.markdown("<span style='color: gray; font-size: 14px;'>Log your daily work locations and submit timesheets seamlessly.</span>", unsafe_allow_html=True)
-                
-            if st.button("Select as Employee", key="btn_emp", use_container_width=True):
-                st.session_state.current_role = "EMPLOYEE"
-                st.rerun()
+            submit_login = st.form_submit_button("Authenticate & Log In", type="primary", use_container_width=True)
+            
+            if submit_login:
+                if not input_email or not input_password:
+                    st.error("⚠️ Please fill out both email and password fields.")
+                else:
+                    user_record = verify_login(input_email, input_password)
+                    if user_record:
+                        st.session_state.auth_status = True
+                        st.session_state.current_role = user_record['role']
+                        st.session_state.logged_user_name = user_record['full_name']
+                        st.success(f"🔓 Access Granted. Welcome back, {user_record['full_name']}!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Invalid Email Address or Password. Contact Admin.")
 
 # ==========================================
-# SCREEN 2: EMPLOYEE TIMESHEET FORM
+# SCREEN 2: EMPLOYEE TIMESHEET WORKSPACE
 # ==========================================
-elif st.session_state.current_role == "EMPLOYEE":
+elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE":
     left_space, center_content, right_space = st.columns([1, 3, 1])
     
     with center_content:
         col_title, col_logout = st.columns([4, 1])
         with col_title:
             st.title("📝 Employee Entry Workspace")
+            st.caption(f"👤 Connected User Profile: **{st.session_state.logged_user_name}**")
         with col_logout:
-            if st.button("↩️ Change Role", use_container_width=True):
+            if st.button("🚪 Log Out", use_container_width=True, type="secondary"):
+                st.session_state.auth_status = False
                 st.session_state.current_role = "NONE"
+                st.session_state.logged_user_name = ""
                 st.rerun()
                 
         st.markdown("---")
         
-        employee_name = st.text_input("👤 Your Full Name:", value="Enter your name")
+        # Pull profile full name automatically from authenticated session data
+        employee_name = st.text_input("👤 Your Registered Work Name:", value=st.session_state.logged_user_name, disabled=True)
        
         st.markdown("### 📅 Add Your Worked Shifts")
         
@@ -145,7 +162,6 @@ elif st.session_state.current_role == "EMPLOYEE":
             "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM"
         ]
         
-        # --- 1. PRIMARY SHIFT BLOCK ---
         st.markdown("#### **Primary Bulk Shift Block (Optional)**")
         selected_dropdown = st.selectbox("📍 Select Your Main Work Location Site:", options=locations_list, key="primary_loc")
         
@@ -164,20 +180,14 @@ elif st.session_state.current_role == "EMPLOYEE":
             st.write("⏰ **End Time:**")
             p_end = st.time_input("End", value=time(17, 0), key="p_end_time", label_visibility="collapsed")
         
-        # --- 2. HOLIDAY / DAY OFF SECTION ---
         st.markdown("---")
         st.markdown("#### **Holiday / DayOff (Optional)**")
         
         holiday_dates_selected = []
-        
         for h in range(st.session_state.holiday_days_count):
             h_col1, h_col2 = st.columns([2, 2])
             with h_col1:
-                h_date = st.date_input(
-                    f"Select Holiday Date #{h+1}:",
-                    value=datetime.now().date(),
-                    key=f"holiday_date_{h}"
-                )
+                h_date = st.date_input(f"Select Holiday Date #{h+1}:", value=datetime.now().date(), key=f"holiday_date_{h}")
                 holiday_dates_selected.append(h_date)
             with h_col2:
                 st.write("")
@@ -193,7 +203,6 @@ elif st.session_state.current_role == "EMPLOYEE":
                     st.session_state.holiday_days_count -= 1
                     st.rerun()
 
-        # --- 3. DYNAMIC EXTRA SINGLE SHIFTS LIST ---
         st.markdown("---")
         st.markdown("#### **Additional Individual Shifts**")
         st.write("Log split site shifts or single standalone custom working dates below.")
@@ -208,35 +217,16 @@ elif st.session_state.current_role == "EMPLOYEE":
             add_col1, add_col2, add_col3, add_col4 = st.columns([2, 2, 1, 1])
             
             with add_col1:
-                loc_entry = st.selectbox(
-                    f"Select Location for Shift #{i+1}:", 
-                    options=locations_list, 
-                    key=f"extra_loc_{i}"
-                )
+                loc_entry = st.selectbox(f"Select Location for Shift #{i+1}:", options=locations_list, key=f"extra_loc_{i}")
                 extra_locations_selected.append(loc_entry)
-                    
             with add_col2:
-                date_entry = st.date_input(
-                    f"Select Single Date for Shift #{i+1}:", 
-                    value=datetime.now().date(), 
-                    key=f"extra_date_{i}"
-                )
+                date_entry = st.date_input(f"Select Single Date for Shift #{i+1}:", value=datetime.now().date(), key=f"extra_date_{i}")
                 extra_dates_selected.append(date_entry)
-                
             with add_col3:
-                t_start = st.time_input(
-                    f"Start Time #{i+1}:",
-                    value=time(9, 0),
-                    key=f"extra_start_{i}"
-                )
+                t_start = st.time_input(f"Start Time #{i+1}:", value=time(9, 0), key=f"extra_start_{i}")
                 extra_start_times.append(t_start)
-                
             with add_col4:
-                t_end = st.time_input(
-                    f"End Time #{i+1}:",
-                    value=time(17, 0),
-                    key=f"extra_end_{i}"
-                )
+                t_end = st.time_input(f"End Time #{i+1}:", value=time(17, 0), key=f"extra_end_{i}")
                 extra_end_times.append(t_end)
         
         act_col1, act_col2 = st.columns([1, 2])
@@ -256,10 +246,6 @@ elif st.session_state.current_role == "EMPLOYEE":
             has_errors = False
             primary_is_active = (selected_dropdown != "Select the Location")
             
-            if not employee_name.strip() or employee_name == "Enter your name":
-                st.error("⚠️ Please fill in your name.")
-                has_errors = True
-                
             if not primary_is_active and st.session_state.extra_shifts_count == 0 and st.session_state.holiday_days_count == 0:
                 st.error("⚠️ Please choose a primary location, add a holiday date, or use an additional shift row.")
                 has_errors = True
@@ -271,7 +257,6 @@ elif st.session_state.current_role == "EMPLOYEE":
             
             if not has_errors:
                 generated_dates = []
-                
                 if primary_is_active:
                     if isinstance(date_range, (list, tuple)):
                         if len(date_range) == 2:
@@ -295,12 +280,10 @@ elif st.session_state.current_role == "EMPLOYEE":
                         cursor = conn.cursor()
                         success_count = 0
                         
-                        # Direct regular inserts to ensure multiple distinct records save successfully
                         if primary_is_active:
                             for single_date in generated_dates:
                                 if single_date.weekday() in [5, 6]:
                                     continue
-                                    
                                 query = """
                                 INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
                                 VALUES (%s, %s, %s, %s, %s);
@@ -321,7 +304,6 @@ elif st.session_state.current_role == "EMPLOYEE":
                             chosen_date = extra_dates_selected[idx]
                             c_start = extra_start_times[idx]
                             c_end = extra_end_times[idx]
-                                
                             query = """
                             INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time)
                             VALUES (%s, %s, %s, %s, %s);
@@ -344,16 +326,18 @@ elif st.session_state.current_role == "EMPLOYEE":
                         conn.close()
 
 # ==========================================
-# SCREEN 3: MANAGEMENT DASHBOARD (DISTINCT DISPLAY)
+# SCREEN 3: MANAGEMENT DASHBOARD WORKSPACE
 # ==========================================
-elif st.session_state.current_role == "MANAGER":
+elif st.session_state.auth_status and st.session_state.current_role == "MANAGER":
     col_title, col_logout = st.columns([5, 1])
     with col_title:
         st.title("💼 Management Dashboard")
         st.subheader("UK Multi-Site Operations Overview & Payroll Audit")
     with col_logout:
-        if st.button("↩️ Change Role", use_container_width=True):
+        if st.button("🚪 Log Out", use_container_width=True, type="secondary"):
+            st.session_state.auth_status = False
             st.session_state.current_role = "NONE"
+            st.session_state.logged_user_name = ""
             st.rerun()
             
     st.markdown("---")
@@ -382,7 +366,6 @@ elif st.session_state.current_role == "MANAGER":
         df['Is Payable'] = [res[0] for res in status_results]
         df['Day Categorization'] = [res[1] for res in status_results]
         
-        # Clean up database hours into proper 24hr strings (e.g., "09:00" and "13:00")
         df['start_time'] = df['start_time'].apply(format_time_string)
         df['end_time'] = df['end_time'].apply(format_time_string)
         
@@ -392,7 +375,6 @@ elif st.session_state.current_role == "MANAGER":
         with filter_col1:
             unique_employees = sorted(list(df['employee_name'].unique()))
             selected_emp = st.selectbox("1. Select an Employee:", unique_employees)
-            
         with filter_col2:
             emp_months = df[df['employee_name'] == selected_emp]['Month_Year'].unique()
             selected_month = st.selectbox("2. Choose Pay-Period Month:", sorted(list(emp_months)))
@@ -405,7 +387,6 @@ elif st.session_state.current_role == "MANAGER":
             work_payable_df = filtered_df[(filtered_df['Is Payable'] == True) & (filtered_df['location'] != "Holidays (Day off)")]
             holiday_df = filtered_df[filtered_df['location'] == "Holidays (Day off)"]
             
-            # THE CALENDAR DAY RULE: Collapse all same-day split shifts into 1 calendar day total for cards
             total_days_logged = filtered_df['work_date'].nunique()
             total_payable_days = work_payable_df['work_date'].nunique()
             total_holiday_days = holiday_df['work_date'].nunique()
@@ -419,8 +400,6 @@ elif st.session_state.current_role == "MANAGER":
             m4.metric("🛑 Excluded (Weekends / Bank Holidays)", f"{total_excluded_days} Days")
             
             st.write("")
-            
-            # --- SUMMARY BY SITE LOCATION ---
             st.markdown("#### **Approved Payroll Summary Table (Site Overview)**")
             summary_df = filtered_df.groupby('location').agg({'work_date': 'count'}).reset_index()
             summary_df.columns = ['UK Work Location Site / Status', 'Total Shift Entries Logged']
@@ -436,8 +415,6 @@ elif st.session_state.current_role == "MANAGER":
             )
             
             st.write("")
-            
-            # --- FULL AUDIT LOG (SHOWS EVERY SPLIT LOCATION ROW) ---
             with st.expander("🔍 In-Depth Shift Audit Log (Detailed Shift Windows)", expanded=True):
                 audit_display_df = filtered_df[['work_date', 'location', 'start_time', 'end_time', 'Day Categorization']].copy()
                 audit_display_df.columns = ['Calendar Date', 'Location Site / Status', 'Start Time', 'End Time', 'Payroll Classification']
