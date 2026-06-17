@@ -169,7 +169,6 @@ elif "_LOGIN" in st.session_state.current_role and not st.session_state.auth_sta
                     if submit:
                         user_db = verify_user_login(input_email, target_role)
                         if user_db and user_db['password'] == input_password:
-                            # Catch default factory password trigger!
                             if input_password == "admin123":
                                 st.session_state.matched_user_record = user_db
                                 st.session_state.force_password_change = True
@@ -233,8 +232,15 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
         employee_name = st.text_input("👤 Your Registered Work Name:", value=st.session_state.logged_user_name, disabled=True)
        
         st.markdown("### 📅 Add Your Worked Shifts")
-        locations_list = ["Select the Location", "Al-Khair Foundation", "Al-Khair Schools", "BizAv Media Ltd", "Saks London"]
+        locations_list = [
+            "Select the Location", "Al-Khair Foundation", "Al-Khair Schools", 
+            "BizAv Media Ltd", "Saks London", "Photocopiers Direct", 
+            "EVA International", "Fidelis College", "IQRA ELM", "Heretoga",
+            "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy", 
+            "Marathon School", "Suffah Primary School", "Vestro Marketing", "UIKAM"
+        ]
         
+        st.markdown("#### **Primary Bulk Shift Block (Optional)**")
         selected_dropdown = st.selectbox("📍 Select Your Main Work Location Site:", options=locations_list, key="primary_loc")
         p_col1, p_col2, p_col3 = st.columns([2, 1, 1])
         with p_col1:
@@ -244,25 +250,105 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
         with p_col3:
             p_end = st.time_input("End", value=time(17, 0), key="p_end_time")
         
+        # --- RESTORED: HOLIDAYS / DAYS OFF LOGIC SECTION ---
+        st.markdown("---")
+        st.markdown("#### **Holiday / DayOff (Optional)**")
+        
+        holiday_dates_selected = []
+        for h in range(st.session_state.holiday_days_count):
+            h_col1, h_col2 = st.columns([2, 2])
+            with h_col1:
+                h_date = st.date_input(f"Select Holiday Date #{h+1}:", value=datetime.now().date(), key=f"holiday_date_{h}")
+                holiday_dates_selected.append(h_date)
+        
+        h_act1, h_act2 = st.columns([1, 2])
+        with h_act1:
+            if st.button("➕ Add Another Holiday Date", use_container_width=True):
+                st.session_state.holiday_days_count += 1
+                st.rerun()
+        with h_act2:
+            if st.session_state.holiday_days_count > 0:
+                if st.button("🗑️ Clear Last Holiday Row", key="clear_h_btn", type="secondary"):
+                    st.session_state.holiday_days_count -= 1
+                    st.rerun()
+
+        # --- RESTORED: ADDITIONAL INDIVIDUAL SHIFTS LOGIC SECTION ---
+        st.markdown("---")
+        st.markdown("#### **Additional Individual Shifts**")
+        
+        extra_locations_selected, extra_dates_selected, extra_start_times, extra_end_times = [], [], [], []
+        for i in range(st.session_state.extra_shifts_count):
+            st.markdown(f"##### **Extra Shift Entry #{i+1}**")
+            add_col1, add_col2, add_col3, add_col4 = st.columns([2, 2, 1, 1])
+            with add_col1:
+                extra_locations_selected.append(st.selectbox(f"Location #{i+1}:", options=locations_list, key=f"extra_loc_{i}"))
+            with add_col2:
+                extra_dates_selected.append(st.date_input(f"Date #{i+1}:", value=datetime.now().date(), key=f"extra_date_{i}"))
+            with add_col3:
+                extra_start_times.append(st.time_input(f"Start #{i+1}:", value=time(9, 0), key=f"extra_start_{i}"))
+            with add_col4:
+                extra_end_times.append(st.time_input(f"End #{i+1}:", value=time(17, 0), key=f"extra_end_{i}"))
+        
+        act_col1, act_col2 = st.columns([1, 2])
+        with act_col1:
+            if st.button("➕ Add Another Single-Shift Location", use_container_width=True):
+                st.session_state.extra_shifts_count += 1
+                st.rerun()
+        with act_col2:
+            if st.session_state.extra_shifts_count > 0:
+                if st.button("🗑️ Clear Last Additional Entry Row", type="secondary"):
+                    st.session_state.extra_shifts_count -= 1
+                    st.rerun()
+        
         st.markdown("---")
         if st.button("Process & Submit Timesheet", type="primary", use_container_width=True):
             primary_is_active = (selected_dropdown != "Select the Location")
-            if primary_is_active:
+            
+            has_errors = False
+            if not primary_is_active and st.session_state.extra_shifts_count == 0 and st.session_state.holiday_days_count == 0:
+                st.error("⚠️ Please choose a primary location, add a holiday date, or use an additional shift row.")
+                has_errors = True
+                
+            for idx, loc_check in enumerate(extra_locations_selected):
+                if loc_check == "Select the Location":
+                    st.error(f"⚠️ Please choose a valid work site location for extra entry row #{idx+1}.")
+                    has_errors = True
+                    
+            if not has_errors:
                 conn = get_db_connection()
                 if conn:
                     try:
                         cursor = conn.cursor()
-                        start_date, end_date = date_range[0], date_range[1] if len(date_range) == 2 else date_range[0]
-                        delta = end_date - start_date
                         success_count = 0
-                        for i in range(delta.days + 1):
-                            single_date = start_date + timedelta(days=i)
-                            if single_date.weekday() in [5, 6]: continue
-                            query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, %s, %s)"
-                            cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown, p_start.strftime("%H:%M"), p_end.strftime("%H:%M")))
+                        
+                        # Process Primary Bulk Entries
+                        if primary_is_active:
+                            start_date, end_date = date_range[0], date_range[1] if len(date_range) == 2 else date_range[0]
+                            delta = end_date - start_date
+                            for i in range(delta.days + 1):
+                                single_date = start_date + timedelta(days=i)
+                                if single_date.weekday() in [5, 6]: continue  # Automate weekend exclusions
+                                query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, %s, %s)"
+                                cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown, p_start.strftime("%H:%M"), p_end.strftime("%H:%M")))
+                                success_count += 1
+                        
+                        # Process Holiday Dates
+                        for h_date in holiday_dates_selected:
+                            query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, NULL, NULL)"
+                            cursor.execute(query, (employee_name.strip(), h_date, "Holidays (Day off)"))
                             success_count += 1
+                        
+                        # Process Extra Shifts
+                        for idx in range(len(extra_locations_selected)):
+                            query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, %s, %s)"
+                            cursor.execute(query, (employee_name.strip(), extra_dates_selected[idx], extra_locations_selected[idx], extra_start_times[idx].strftime("%H:%M"), extra_end_times[idx].strftime("%H:%M")))
+                            success_count += 1
+                                
                         conn.commit()
                         st.success(f"🎉 Timesheet submitted completely! Saved {success_count} entries.")
+                        st.balloons()
+                        st.session_state.extra_shifts_count = 0
+                        st.session_state.holiday_days_count = 0
                         st.rerun()
                     except mysql.connector.Error as err:
                         st.error(f"❌ Database error: {err}")
@@ -271,12 +357,13 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                         conn.close()
 
 # ==========================================
-# SCREEN 4: MANAGEMENT DASHBOARD WORKSPACE
+# SCREEN 4: MANAGEMENT DASHBOARD WORKSPACE 
 # ==========================================
 elif st.session_state.auth_status and st.session_state.current_role == "MANAGER":
     col_title, col_logout = st.columns([5, 1])
     with col_title:
         st.title("💼 Management Dashboard")
+        st.subheader("UK Multi-Site Operations Overview & Payroll Audit")
     with col_logout:
         if st.button("🚪 Log Out", use_container_width=True):
             st.session_state.auth_status = False
@@ -285,4 +372,24 @@ elif st.session_state.auth_status and st.session_state.current_role == "MANAGER"
             st.rerun()
             
     st.markdown("---")
-    st.info("📊 Authenticated. Management reporting system fully accessible.")
+    
+    records = []
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT employee_name, work_date, location, start_time, end_time FROM daily_records ORDER BY work_date DESC")
+            records = cursor.fetchall()
+        except mysql.connector.Error as err:
+            st.error(f"⚠️ Could not pull entries table: {err}")
+        finally:
+            cursor.close()
+            conn.close()
+            
+    if records:
+        df = pd.DataFrame(records)
+        df['work_date'] = pd.to_datetime(df['work_date']).dt.date
+        df['Month_Year'] = pd.to_datetime(df['work_date']).dt.strftime('%B %Y')
+        
+        status_results = df['work_date'].apply(calculate_billable_status)
+        df['Is Payable'] = [res[0] for res in status_results
