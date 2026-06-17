@@ -12,7 +12,7 @@ def get_db_connection():
     try:
         conn = mysql.connector.connect(
             host=st.secrets["db_host"],
-            port=int(st.secrets["db_port"]),
+            port=int(st.secrets["db_port"],
             user=st.secrets["db_user"],
             password=st.secrets["db_password"],
             database=st.secrets["db_name"]
@@ -323,7 +323,7 @@ elif st.session_state.current_role == "EMPLOYEE":
                         conn.close()
 
 # ==========================================
-# SCREEN 3: MANAGEMENT DASHBOARD (FIXED)
+# SCREEN 3: MANAGEMENT DASHBOARD (DAYS RULE)
 # ==========================================
 elif st.session_state.current_role == "MANAGER":
     col_title, col_logout = st.columns([5, 1])
@@ -342,6 +342,7 @@ elif st.session_state.current_role == "MANAGER":
     if conn:
         try:
             cursor = conn.cursor(dictionary=True)
+            # Fetch and sort so that multi-site splits show up cleanly grouped in order
             cursor.execute("SELECT employee_name, work_date, location, start_time, end_time FROM daily_records ORDER BY work_date DESC, start_time ASC")
             records = cursor.fetchall()
         except mysql.connector.Error as err:
@@ -377,48 +378,30 @@ elif st.session_state.current_role == "MANAGER":
         if selected_emp and selected_month:
             filtered_df = df[(df['employee_name'] == selected_emp) & (df['Month_Year'] == selected_month)].copy()
             
-            # Compute precise duration for each distinct shift entry
-            def compute_hours(row):
-                if pd.isna(row['start_time']) or pd.isna(row['end_time']) or row['location'] == "Holidays (Day off)":
-                    return 0.0
-                try:
-                    t1 = datetime.strptime(str(row['start_time']), "%H:%M:%S")
-                    t2 = datetime.strptime(str(row['end_time']), "%H:%M:%S")
-                    return max(0.0, (t2 - t1).total_seconds() / 3600.0)
-                except:
-                    return 0.0
-
-            filtered_df['Hours_Worked'] = filtered_df.apply(compute_hours, axis=1)
-            
-            # Split out regular work from holidays
+            # Segregate shifts for clean metric analysis
             work_payable_df = filtered_df[(filtered_df['Is Payable'] == True) & (filtered_df['location'] != "Holidays (Day off)")]
             holiday_df = filtered_df[filtered_df['location'] == "Holidays (Day off)"]
             
-            # METRIC CORRECTION FOR MULTI-SITE SPLITS: 
-            # Total logged rows is accurate, but unique days avoids double-counting calendar days for metrics
-            total_shifts_logged = len(filtered_df)
+            # UNIQUE DAY RULE RE-APPLIED HERE: Multiple locations on same day collapse to 1 day worked
+            total_days_logged = filtered_df['work_date'].nunique()
             total_payable_days = work_payable_df['work_date'].nunique()
             total_holiday_days = holiday_df['work_date'].nunique()
-            total_hours_earned = filtered_df['Hours_Worked'].sum()
+            total_excluded_days = max(0, total_days_logged - total_payable_days - total_holiday_days)
             
             st.markdown(f"### 📊 Breakdown for {selected_emp} during **{selected_month}**")
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("⏱️ Total Hours Tracked", f"{total_hours_earned:.2f} Hrs")
-            m2.metric("💰 Approved Work Days", f"{total_payable_days} Days")
+            m1.metric("📅 Total Days Logged", f"{total_days_logged} Days")
+            m2.metric("💰 Approved Payable Days", f"{total_payable_days} Days")
             m3.metric("🏖️ Holidays / Days Off", f"{total_holiday_days} Days")
-            m4.metric("📂 Total Distinct Shift Rows", f"{total_shifts_logged} Rows")
+            m4.metric("🛑 Excluded (Weekends / Bank Holidays)", f"{total_excluded_days} Days")
             
             st.write("")
             
             # --- SUMMARY BY SITE LOCATION ---
-            st.markdown("#### **Approved Payroll Summary Table (Site Hours Overview)**")
-            summary_df = filtered_df.groupby('location').agg({'work_date': 'count', 'Hours_Worked': 'sum'}).reset_index()
-            summary_df.columns = ['UK Work Location Site / Status', 'Total Shift Entries Logged', 'Total Hours Tracked']
-            
-            if not summary_df.empty:
-                st.dataframe(summary_df, use_container_width=True, hide_index=True)
-            else:
-                st.warning(f"This staff user has 0 records within the selection parameter month.")
+            st.markdown("#### **Approved Payroll Summary Table (Site Overview)**")
+            summary_df = filtered_df.groupby('location').agg({'work_date': 'count'}).reset_index()
+            summary_df.columns = ['UK Work Location Site / Status', 'Total Shift Entries Logged']
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
                 
             csv = filtered_df.to_csv(index=False).encode('utf-8')
             st.download_button(
@@ -431,8 +414,8 @@ elif st.session_state.current_role == "MANAGER":
             
             st.write("")
             
-            # --- FULL IN-DEPTH AUDIT LOG ---
-            st.markdown("#### 🔍 In-Depth Shift Audit Log (Detailed Shift Windows)")
-            audit_display_df = filtered_df[['work_date', 'location', 'start_time', 'end_time', 'Hours_Worked', 'Day Categorization']].copy()
-            audit_display_df.columns = ['Calendar Date', 'Location Site / Status', 'Start Time', 'End Time', 'Hours Logged', 'Payroll Classification']
-            st.dataframe(audit_display_df, use_container_width=True, hide_index=True)
+            # --- FULL LOG SHOWS EVERYTHING SEPARATELY ---
+            with st.expander("🔍 In-Depth Shift Audit Log (Detailed Shift Windows)", expanded=True):
+                audit_display_df = filtered_df[['work_date', 'location', 'start_time', 'end_time', 'Day Categorization']].copy()
+                audit_display_df.columns = ['Calendar Date', 'Location Site / Status', 'Start Time', 'End Time', 'Payroll Classification']
+                st.dataframe(audit_display_df, use_container_width=True, hide_index=True)
