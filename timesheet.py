@@ -15,7 +15,8 @@ def get_db_connection():
             port=int(st.secrets["db_port"]),
             user=st.secrets["db_user"],
             password=st.secrets["db_password"],
-            database=st.secrets["db_name"]
+            database=st.secrets["db_name"],
+            ssl_disabled=False
         )
         return conn
     except mysql.connector.Error as err:
