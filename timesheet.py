@@ -206,7 +206,7 @@ elif "_LOGIN" in st.session_state.current_role and not st.session_state.auth_sta
                                 st.session_state.force_password_change = False
                                 st.session_state.matched_user_record = None
                                 st.success("🎉 Custom password set successfully!")
-                                st.rerun()
+                              #  st.rerun()
 
 # ==========================================
 # SCREEN 3: EMPLOYEE TIMESHEET WORKSPACE
