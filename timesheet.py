@@ -209,7 +209,7 @@ elif "_LOGIN" in st.session_state.current_role and not st.session_state.auth_sta
                                 st.success("🎉 Custom password set successfully!")
                                 st.rerun()
 
-                        elif st.session_state.reset_success:
+                        if st.session_state.reset_success:
                             left_space, center_card, right_space = st.columns([1, 1.5, 1])
                             with center_card:
                                 st.write("")
