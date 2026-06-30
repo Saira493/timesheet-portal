@@ -348,7 +348,30 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                             query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, %s, %s)"
                             cursor.execute(query, (employee_name.strip(), extra_dates_selected[idx], extra_locations_selected[idx], extra_start_times[idx].strftime("%H:%M"), extra_end_times[idx].strftime("%H:%M")))
                             success_count += 1
-                                
+
+
+                        if st.session_state.pending_records:
+                            preview_df = pd.DataFrame(st.session_state.pending_records)
+                        
+                            edited_df = st.data_editor(
+                                preview_df,
+                                num_rows="dynamic",   # allows row deletion (and adding) via the built-in UI
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "location": st.column_config.SelectboxColumn(
+                                        "Location", options=locations_list[1:] + ["Holidays (Day off)"]
+                                    ),
+                                    "work_date": st.column_config.DateColumn("Date"),
+                                    "start_time": st.column_config.TextColumn("Start (HH:MM)"),
+                                    "end_time": st.column_config.TextColumn("End (HH:MM)"),
+                                },
+                                key="pending_editor"
+                            )
+                        
+                            st.session_state.pending_records = edited_df.to_dict("records")
+
+    
                         conn.commit()
                         st.success(f"🎉 Timesheet submitted completely! Saved {success_count} entries.")
                         st.balloons()
