@@ -206,8 +206,8 @@ elif "_LOGIN" in st.session_state.current_role and not st.session_state.auth_sta
                                 st.session_state.force_password_change = False
                                 st.session_state.matched_user_record = None
                                 st.session_state.reset_success = True
-                               # st.success("🎉 Custom password set successfully!")
-                              #  st.rerun()
+                                st.success("🎉 Custom password set successfully!")
+                                st.rerun()
 
                         elif st.session_state.reset_success:
                             left_space, center_card, right_space = st.columns([1, 1.5, 1])
