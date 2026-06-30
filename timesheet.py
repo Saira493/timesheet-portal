@@ -223,7 +223,6 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                 st.session_state.auth_status = False
                 st.session_state.current_role = "NONE"
                 st.session_state.logged_user_name = ""
-                st.session_state.preview_df = None
                 st.rerun()
                 
         st.markdown("---")
@@ -297,9 +296,7 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                     st.rerun()
         
         st.markdown("---")
-        
-        # --- GENERATE LOG ROWS FOR PREVIEW ---
-        if st.button("📋 Process & Preview My Audit Log Rows", type="primary", use_container_width=True):
+        if st.button("Process & Submit Timesheet", type="primary", use_container_width=True):
             primary_is_active = (selected_dropdown != "Select the Location")
             
             has_errors = False
@@ -313,104 +310,43 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                     has_errors = True
                     
             if not has_errors:
-                staged_rows = []
-                
-                if primary_is_active:
-                    start_date, end_date = date_range[0], date_range[1] if len(date_range) == 2 else date_range[0]
-                    delta = end_date - start_date
-                    for i in range(delta.days + 1):
-                        single_date = start_date + timedelta(days=i)
-                        if single_date.weekday() in [5, 6]: continue  
+                conn = get_db_connection()
+                if conn:
+                    try:
+                        cursor = conn.cursor()
+                        success_count = 0
                         
-                        _, classification = calculate_billable_status(single_date)
-                        staged_rows.append({
-                            "Calendar Date": single_date.strftime("%Y-%m-%d"),
-                            "Location Site / Status": selected_dropdown,
-                            "Start Time": p_start.strftime("%H:%M"),
-                            "End Time": p_end.strftime("%H:%M"),
-                            "Payroll Classification": classification
-                        })
-                
-                for h_date in holiday_dates_selected:
-                    staged_rows.append({
-                        "Calendar Date": h_date.strftime("%Y-%m-%d"),
-                        "Location Site / Status": "Holidays (Day off)",
-                        "Start Time": "-",
-                        "End Time": "-",
-                        "Payroll Classification": "Holidays / Days Off"
-                    })
-                
-                for idx in range(len(extra_locations_selected)):
-                    extra_date = extra_dates_selected[idx]
-                    _, classification = calculate_billable_status(extra_date)
-                    staged_rows.append({
-                        "Calendar Date": extra_date.strftime("%Y-%m-%d"),
-                        "Location Site / Status": extra_locations_selected[idx],
-                        "Start Time": extra_start_times[idx].strftime("%H:%M"),
-                        "End Time": extra_end_times[idx].strftime("%H:%M"),
-                        "Payroll Classification": classification
-                    })
-                
-                st.session_state.preview_df = pd.DataFrame(staged_rows)
-
-        # --- RESTORED LOOK: IN-DEPTH SHIFT AUDIT LOG FOR EMPLOYEE ---
-        if st.session_state.preview_df is not None:
-            st.markdown("### 🔍 📊 In-Depth Shift Audit Log (Detailed Shifts Split)")
-            st.caption("💡 **How to Edit / Remove:** Click inside any cell to change its data. To delete any row completely, check its box on the far left and tap your keyboard's **Delete** or **Backspace** key.")
-            
-            # This renders identically to the Manager view layout, but with edit/remove capabilities
-            edited_df = st.data_editor(
-                st.session_state.preview_df,
-                num_rows="dynamic", # Enables dynamic adding and removing of rows natively on the right/left layout edges
-                use_container_width=True,
-                hide_index=False,   # Keep indexes or selection boxes visible so row-level operations are intuitive
-                column_config={
-                    "Calendar Date": st.column_config.TextColumn("Calendar Date", required=True),
-                    "Location Site / Status": st.column_config.SelectboxColumn("Location Site / Status", options=locations_list + ["Holidays (Day off)"], required=True),
-                    "Start Time": st.column_config.TextColumn("Start Time"),
-                    "End Time": st.column_config.TextColumn("End Time"),
-                    "Payroll Classification": st.column_config.TextColumn("Payroll Classification")
-                }
-            )
-            
-            st.markdown("---")
-            
-            # --- FINAL SUBMIT BUTTON AT THE VERY END ---
-            if st.button("🚀 Process & Final Submit Timesheet", type="primary", use_container_width=True):
-                if edited_df.empty:
-                    st.error("⚠️ No entries remain in your log layout table. Add or compile shifts first.")
-                else:
-                    conn = get_db_connection()
-                    if conn:
-                        try:
-                            cursor = conn.cursor()
-                            success_count = 0
-                            
-                            for _, row in edited_df.iterrows():
-                                raw_start = str(row['Start Time']).strip()
-                                raw_end = str(row['End Time']).strip()
-                                
-                                db_start = None if raw_start in ["-", "", "None", "NULL"] else raw_start
-                                db_end = None if raw_end in ["-", "", "None", "NULL"] else raw_end
-                                
+                        if primary_is_active:
+                            start_date, end_date = date_range[0], date_range[1] if len(date_range) == 2 else date_range[0]
+                            delta = end_date - start_date
+                            for i in range(delta.days + 1):
+                                single_date = start_date + timedelta(days=i)
+                                if single_date.weekday() in [5, 6]: continue  
                                 query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, %s, %s)"
-                                cursor.execute(query, (employee_name.strip(), row['Calendar Date'], row['Location Site / Status'], db_start, db_end))
+                                cursor.execute(query, (employee_name.strip(), single_date, selected_dropdown, p_start.strftime("%H:%M"), p_end.strftime("%H:%M")))
                                 success_count += 1
-                                    
-                            conn.commit()
-                            st.success(f"🎉 Timesheet submitted completely! Saved {success_count} entries.")
-                            st.balloons()
-                            
-                            # Clean up states
-                            st.session_state.extra_shifts_count = 0
-                            st.session_state.holiday_days_count = 0
-                            st.session_state.preview_df = None
-                            st.rerun()
-                        except mysql.connector.Error as err:
-                            st.error(f"❌ Database error: {err}")
-                        finally:
-                            cursor.close()
-                            conn.close()
+                        
+                        for h_date in holiday_dates_selected:
+                            query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, NULL, NULL)"
+                            cursor.execute(query, (employee_name.strip(), h_date, "Holidays (Day off)"))
+                            success_count += 1
+                        
+                        for idx in range(len(extra_locations_selected)):
+                            query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, %s, %s)"
+                            cursor.execute(query, (employee_name.strip(), extra_dates_selected[idx], extra_locations_selected[idx], extra_start_times[idx].strftime("%H:%M"), extra_end_times[idx].strftime("%H:%M")))
+                            success_count += 1
+                                
+                        conn.commit()
+                        st.success(f"🎉 Timesheet submitted completely! Saved {success_count} entries.")
+                        st.balloons()
+                        st.session_state.extra_shifts_count = 0
+                        st.session_state.holiday_days_count = 0
+                      #  st.rerun()
+                    except mysql.connector.Error as err:
+                        st.error(f"❌ Database error: {err}")
+                    finally:
+                        cursor.close()
+                        conn.close()
 
 # ==========================================
 # SCREEN 4: MANAGEMENT DASHBOARD WORKSPACE 
