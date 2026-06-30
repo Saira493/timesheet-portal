@@ -205,8 +205,21 @@ elif "_LOGIN" in st.session_state.current_role and not st.session_state.auth_sta
                                 st.session_state.logged_user_name = st.session_state.matched_user_record['full_name']
                                 st.session_state.force_password_change = False
                                 st.session_state.matched_user_record = None
-                                st.success("🎉 Custom password set successfully!")
+                                 st.session_state.reset_success = True
+                               # st.success("🎉 Custom password set successfully!")
                               #  st.rerun()
+
+elif st.session_state.reset_success:
+    left_space, center_card, right_space = st.columns([1, 1.5, 1])
+    with center_card:
+        st.write("")
+        with st.container(border=True):
+            st.markdown("### ✅ Password Updated")
+            st.success("🎉 Custom password set successfully! Please sign in with your new password.")
+            if st.button("🔑 Go to Sign In", type="primary", use_container_width=True):
+                st.session_state.reset_success = False
+                st.session_state.current_role = "NONE"
+                st.rerun()
 
 # ==========================================
 # SCREEN 3: EMPLOYEE TIMESHEET WORKSPACE
