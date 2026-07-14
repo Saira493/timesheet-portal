@@ -104,6 +104,14 @@ if "force_password_change" not in st.session_state:
     st.session_state.force_password_change = False
 if "matched_user_record" not in st.session_state:
     st.session_state.matched_user_record = None
+if "pending_records" not in st.session_state:
+    st.session_state.pending_records = []
+if "reset_success" not in st.session_state:
+    st.session_state.reset_success = False
+if "active_clock_session_id" not in st.session_state:
+    st.session_state.active_clock_session_id = None
+if "is_clocked_in" not in st.session_state:
+    st.session_state.is_clocked_in = False
 
 # ==========================================
 # SCREEN 1: IDENTITY SETUP (HOME SCREEN)
@@ -222,331 +230,8 @@ elif "_LOGIN" in st.session_state.current_role and not st.session_state.auth_sta
                                         st.rerun()
 
 # ==========================================
-# SCREEN 3: EMPLOYEE TIMESHEET WORKSPACE
+# SCREEN 3: EMPLOYEE TIMESHEET WORKSPACE (Clock In/Out + Manual Entry)
 # ==========================================
-elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE":
-    left_space, center_content, right_space = st.columns([1, 3, 1])
-    with center_content:
-        col_title, col_logout = st.columns([4, 1])
-        with col_title:
-            st.title("📝 Employee Entry Workspace")
-            st.caption(f"👤 Connected Profile: **{st.session_state.logged_user_name}**")
-        with col_logout:
-            if st.button("🚪 Log Out", use_container_width=True):
-                st.session_state.auth_status = False
-                st.session_state.current_role = "NONE"
-                st.session_state.logged_user_name = ""
-                st.rerun()
-
-        st.markdown("---")
-        employee_name = st.text_input("👤 Your Registered Work Name:", value=st.session_state.logged_user_name, disabled=True)
-
-        st.markdown("### 📅 Add Your Worked Shifts")
-        locations_list = [
-            "Select the Location", "Al-Khair Foundation", "Al-Khair Schools",
-            "BizAv Media Ltd", "Saks London", "Photocopiers Direct",
-            "EVA International", "Fidelis College", "IQRA ELM", "Heretoga",
-            "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy",
-            "Marathon School", "Suffah Primary School", "Vestro Marketing", "Health Care", "SPC Coatings", "UIKAM"
-        ]
-
-        st.markdown("#### **Primary Bulk Shift Block (Optional)**")
-        selected_dropdown = st.selectbox("📍 Select Your Main Work Location Site:", options=locations_list, key="primary_loc")
-        p_col1, p_col2, p_col3 = st.columns([2, 1, 1])
-        with p_col1:
-            date_range = st.date_input("Select Date Range Worked:", value=[datetime.now().date(), datetime.now().date() + timedelta(days=2)])
-        with p_col2:
-            p_start = st.time_input("Start", value=time(9, 0), key="p_start_time")
-        with p_col3:
-            p_end = st.time_input("End", value=time(17, 0), key="p_end_time")
-
-        st.markdown("---")
-        st.markdown("#### **Holiday / DayOff (Optional)**")
-
-        holiday_dates_selected = []
-        for h in range(st.session_state.holiday_days_count):
-            h_col1, h_col2 = st.columns([2, 2])
-            with h_col1:
-                h_date = st.date_input(f"Select Holiday Date #{h+1}:", value=datetime.now().date(), key=f"holiday_date_{h}")
-                holiday_dates_selected.append(h_date)
-
-        h_act1, h_act2 = st.columns([1, 2])
-        with h_act1:
-            if st.button("➕ Add Another Holiday Date", use_container_width=True):
-                st.session_state.holiday_days_count += 1
-                st.rerun()
-        with h_act2:
-            if st.session_state.holiday_days_count > 0:
-                if st.button("🗑️ Clear Last Holiday Row", key="clear_h_btn", type="secondary"):
-                    st.session_state.holiday_days_count -= 1
-                    st.rerun()
-
-        st.markdown("---")
-        st.markdown("#### **Additional Individual Shifts**")
-
-        extra_locations_selected, extra_dates_selected, extra_start_times, extra_end_times = [], [], [], []
-        for i in range(st.session_state.extra_shifts_count):
-            st.markdown(f"##### **Extra Shift Entry #{i+1}**")
-            add_col1, add_col2, add_col3, add_col4 = st.columns([2, 2, 1, 1])
-            with add_col1:
-                extra_locations_selected.append(st.selectbox(f"Location #{i+1}:", options=locations_list, key=f"extra_loc_{i}"))
-            with add_col2:
-                extra_dates_selected.append(st.date_input(f"Date #{i+1}:", value=datetime.now().date(), key=f"extra_date_{i}"))
-            with add_col3:
-                extra_start_times.append(st.time_input(f"Start #{i+1}:", value=time(9, 0), key=f"extra_start_{i}"))
-            with add_col4:
-                extra_end_times.append(st.time_input(f"End #{i+1}:", value=time(17, 0), key=f"extra_end_{i}"))
-
-        act_col1, act_col2 = st.columns([1, 2])
-        with act_col1:
-            if st.button("➕ Add Another Single-Shift Location", use_container_width=True):
-                st.session_state.extra_shifts_count += 1
-                st.rerun()
-        with act_col2:
-            if st.session_state.extra_shifts_count > 0:
-                if st.button("🗑️ Clear Last Additional Entry Row", type="secondary"):
-                    st.session_state.extra_shifts_count -= 1
-                    st.rerun()
-
-        # ============================
-        # PREVIEW BUTTON — builds pending_records, does NOT touch the DB
-        # ============================
-        st.markdown("---")
-        if st.button("👁️ Preview Timesheet", type="primary", use_container_width=True):
-            primary_is_active = (selected_dropdown != "Select the Location")
-
-            has_errors = False
-            if not primary_is_active and st.session_state.extra_shifts_count == 0 and st.session_state.holiday_days_count == 0:
-                st.error("⚠️ Please choose a primary location, add a holiday date, or use an additional shift row.")
-                has_errors = True
-
-            for idx, loc_check in enumerate(extra_locations_selected):
-                if loc_check == "Select the Location":
-                    st.error(f"⚠️ Please choose a valid work site location for extra entry row #{idx+1}.")
-                    has_errors = True
-
-            if not has_errors:
-                new_rows = []
-
-                if primary_is_active:
-                    start_date, end_date = date_range[0], date_range[1] if len(date_range) == 2 else date_range[0]
-                    delta = end_date - start_date
-                    for i in range(delta.days + 1):
-                        single_date = start_date + timedelta(days=i)
-                        if single_date.weekday() in [5, 6]:
-                            continue
-                        new_rows.append({
-                            "work_date": single_date,
-                            "location": selected_dropdown,
-                            "start_time": p_start.strftime("%H:%M"),
-                            "end_time": p_end.strftime("%H:%M"),
-                        })
-
-                for h_date in holiday_dates_selected:
-                    new_rows.append({
-                        "work_date": h_date,
-                        "location": "Holidays (Day off)",
-                        "start_time": None,
-                        "end_time": None,
-                    })
-
-                for idx in range(len(extra_locations_selected)):
-                    new_rows.append({
-                        "work_date": extra_dates_selected[idx],
-                        "location": extra_locations_selected[idx],
-                        "start_time": extra_start_times[idx].strftime("%H:%M"),
-                        "end_time": extra_end_times[idx].strftime("%H:%M"),
-                    })
-
-                st.session_state.pending_records = new_rows
-                st.rerun()
-
-        # ============================
-        # PREVIEW TABLE — only shows if pending_records has data
-        # ============================
-        if st.session_state.pending_records:
-            st.markdown("---")
-            st.markdown("## 🔍 Review Your Timesheet")
-            st.caption("Edit or remove any row below, then confirm to submit.")
-
-            rows_to_delete = []
-            for idx, row in enumerate(st.session_state.pending_records):
-                with st.container(border=True):
-                    r_col1, r_col2, r_col3, r_col4, r_col5 = st.columns([2, 2, 1, 1, 0.6])
-
-                    location_options = locations_list[1:] + ["Holidays (Day off)"]
-                    row_loc = row['location'] if row['location'] in location_options else location_options[0]
-
-                    with r_col1:
-                        new_loc = st.selectbox(
-                            f"Location #{idx+1}",
-                            options=location_options,
-                            index=location_options.index(row_loc),
-                            key=f"preview_loc_{idx}"
-                        )
-                    with r_col2:
-                        new_date = st.date_input(f"Date #{idx+1}", value=row['work_date'], key=f"preview_date_{idx}")
-
-                    new_is_holiday = (new_loc == "Holidays (Day off)")
-
-                    with r_col3:
-                        if not new_is_holiday:
-                            default_start = datetime.strptime(row['start_time'], "%H:%M").time() if row['start_time'] else time(9, 0)
-                            new_start = st.time_input(f"Start #{idx+1}", value=default_start, key=f"preview_start_{idx}")
-                        else:
-                            st.write("—")
-                            new_start = None
-                    with r_col4:
-                        if not new_is_holiday:
-                            default_end = datetime.strptime(row['end_time'], "%H:%M").time() if row['end_time'] else time(17, 0)
-                            new_end = st.time_input(f"End #{idx+1}", value=default_end, key=f"preview_end_{idx}")
-                        else:
-                            st.write("—")
-                            new_end = None
-                    with r_col5:
-                        st.write("")
-                        st.write("")
-                        if st.button("🗑️", key=f"preview_delete_{idx}", help="Remove this row"):
-                            rows_to_delete.append(idx)
-
-                    st.session_state.pending_records[idx] = {
-                        "work_date": new_date,
-                        "location": new_loc,
-                        "start_time": new_start.strftime("%H:%M") if new_start else None,
-                        "end_time": new_end.strftime("%H:%M") if new_end else None,
-                    }
-
-            if rows_to_delete:
-                st.session_state.pending_records = [
-                    r for i, r in enumerate(st.session_state.pending_records) if i not in rows_to_delete
-                ]
-                st.rerun()
-
-            st.markdown("---")
-            if st.session_state.pending_records:
-                if st.button("✅ Confirm Submit", type="primary", use_container_width=True):
-                    conn = get_db_connection()
-                    if conn:
-                        try:
-                            cursor = conn.cursor()
-                            success_count = 0
-                            for row in st.session_state.pending_records:
-                                query = "INSERT INTO daily_records (employee_name, work_date, location, start_time, end_time) VALUES (%s, %s, %s, %s, %s)"
-                                cursor.execute(query, (
-                                    employee_name.strip(),
-                                    row['work_date'],
-                                    row['location'],
-                                    row['start_time'],
-                                    row['end_time'],
-                                ))
-                                success_count += 1
-                            conn.commit()
-                            st.success(f"🎉 Timesheet submitted completely! Saved {success_count} entries.")
-                            st.balloons()
-                            st.session_state.extra_shifts_count = 0
-                            st.session_state.holiday_days_count = 0
-                            st.session_state.pending_records = []
-                        except mysql.connector.Error as err:
-                            st.error(f"❌ Database error: {err}")
-                        finally:
-                            cursor.close()
-                            conn.close()
-            else:
-                st.info("ℹ️ All rows removed. Adjust the form above and click 'Preview Timesheet' again.")
-
-# ==========================================
-# SCREEN 4: MANAGEMENT DASHBOARD WORKSPACE 
-# ==========================================
-elif st.session_state.auth_status and st.session_state.current_role == "MANAGER":
-    col_title, col_logout = st.columns([5, 1])
-    with col_title:
-        st.title("💼 Management Dashboard")
-        st.subheader("UK Multi-Site Operations Overview & Payroll Audit")
-    with col_logout:
-        if st.button("🚪 Log Out", use_container_width=True):
-            st.session_state.auth_status = False
-            st.session_state.current_role = "NONE"
-            st.session_state.logged_user_name = ""
-            st.rerun()
-            
-    st.markdown("---")
-    
-    records = []
-    conn = get_db_connection()
-    if conn:
-        try:
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute("SELECT employee_name, work_date, location, start_time, end_time FROM daily_records ORDER BY work_date DESC")
-            records = cursor.fetchall()
-        except mysql.connector.Error as err:
-            st.error(f"⚠️ Could not pull entries table: {err}")
-        finally:
-            cursor.close()
-            conn.close()
-            
-    if records:
-        df = pd.DataFrame(records)
-        df['work_date'] = pd.to_datetime(df['work_date']).dt.date
-        df['Month_Year'] = pd.to_datetime(df['work_date']).dt.strftime('%B %Y')
-        
-        status_results = df['work_date'].apply(calculate_billable_status)
-        df['Is Payable'] = [res[0] for res in status_results]
-        df['Day Categorization'] = [res[1] for res in status_results]
-        
-        df['start_time'] = df['start_time'].apply(format_time_string)
-        df['end_time'] = df['end_time'].apply(format_time_string)
-        
-        unique_employees = sorted(list(df['employee_name'].unique()))
-        unique_months = sorted(list(df['Month_Year'].unique()), key=lambda x: datetime.strptime(x, "%B %Y"), reverse=True)
-        
-        filt_col1, filt_col2 = st.columns(2)
-        with filt_col1:
-            selected_emp = st.selectbox("👤 Select Employee Profile:", unique_employees)
-        with filt_col2:
-            selected_month = st.selectbox("📅 Filter by Payroll Month:", unique_months)
-            
-        f_df = df[(df['employee_name'] == selected_emp) & (df['Month_Year'] == selected_month)].copy()
-        
-        st.markdown(f"## 📊 Breakdown for {selected_emp} during {selected_month}")
-        
-        # --- CALCULATE UNIQUE CALENDAR DAYS ---
-        total_days = f_df['work_date'].nunique()
-        payable_days = f_df[(f_df['Is Payable'] == True) & (f_df['location'] != "Holidays (Day off)")]['work_date'].nunique()
-        holiday_days = f_df[f_df['location'] == "Holidays (Day off)"]['work_date'].nunique()
-        excluded_days = max(0, total_days - payable_days - holiday_days)
-        
-        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.metric("📅 Total Unique Days Logged", f"{total_days} Days")
-        kpi2.metric("💰 Approved Payable Days", f"{payable_days} Days")
-        kpi3.metric("🏖️ Holidays / Days Off", f"{holiday_days} Days")
-        kpi4.metric("🛑 Excluded (Weekends / Holidays)", f"{excluded_days} Days")
-        
-        st.markdown("### Approved Payroll Summary Table (Site Distribution)")
-        summary_pivot = f_df.groupby('location').agg(
-            Days_Logged=('work_date', 'nunique')
-        ).reset_index()
-        summary_pivot.columns = ['UK Work Location Site / Status', 'Total Unique Days Worked']
-        st.dataframe(summary_pivot, use_container_width=True, hide_index=True)
-        
-        csv_data = f_df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download This Filtered Report to CSV", data=csv_data, file_name=f"Payroll_{selected_emp}_{selected_month.replace(' ', '_')}.csv", mime='text/csv', use_container_width=True)
-        
-        # --- RESTORED: START TIME & END TIME DISPLAYED WITHOUT SUMMED HOURS ---
-        with st.expander("🔍 In-Depth Shift Audit Log (Detailed Shifts Split)", expanded=True):
-            audit_display = f_df[['work_date', 'location', 'start_time', 'end_time', 'Day Categorization']].copy()
-            audit_display.columns = ['Calendar Date', 'Location Site / Status', 'Start Time', 'End Time', 'Payroll Classification']
-            st.dataframe(audit_display, use_container_width=True, hide_index=True)
-    else:
-        st.info("ℹ️ No entries have been submitted to the logs table yet.")
-
-
-#CLOCK IN/CLOCK OUT
-
-if "active_clock_session_id" not in st.session_state:
-    st.session_state.active_clock_session_id = None
-if "is_clocked_in" not in st.session_state:
-    st.session_state.is_clocked_in = False
-    
 elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE":
     left_space, center_content, right_space = st.columns([1, 3, 1])
     with center_content:
@@ -923,3 +608,89 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
                             conn6.close()
             else:
                 st.info("ℹ️ All rows removed. Go to Manual Entry tab and click Preview again.")
+# ==========================================
+# SCREEN 4: MANAGEMENT DASHBOARD WORKSPACE 
+# ==========================================
+elif st.session_state.auth_status and st.session_state.current_role == "MANAGER":
+    col_title, col_logout = st.columns([5, 1])
+    with col_title:
+        st.title("💼 Management Dashboard")
+        st.subheader("UK Multi-Site Operations Overview & Payroll Audit")
+    with col_logout:
+        if st.button("🚪 Log Out", use_container_width=True):
+            st.session_state.auth_status = False
+            st.session_state.current_role = "NONE"
+            st.session_state.logged_user_name = ""
+            st.rerun()
+            
+    st.markdown("---")
+    
+    records = []
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT employee_name, work_date, location, start_time, end_time FROM daily_records ORDER BY work_date DESC")
+            records = cursor.fetchall()
+        except mysql.connector.Error as err:
+            st.error(f"⚠️ Could not pull entries table: {err}")
+        finally:
+            cursor.close()
+            conn.close()
+            
+    if records:
+        df = pd.DataFrame(records)
+        df['work_date'] = pd.to_datetime(df['work_date']).dt.date
+        df['Month_Year'] = pd.to_datetime(df['work_date']).dt.strftime('%B %Y')
+        
+        status_results = df['work_date'].apply(calculate_billable_status)
+        df['Is Payable'] = [res[0] for res in status_results]
+        df['Day Categorization'] = [res[1] for res in status_results]
+        
+        df['start_time'] = df['start_time'].apply(format_time_string)
+        df['end_time'] = df['end_time'].apply(format_time_string)
+        
+        unique_employees = sorted(list(df['employee_name'].unique()))
+        unique_months = sorted(list(df['Month_Year'].unique()), key=lambda x: datetime.strptime(x, "%B %Y"), reverse=True)
+        
+        filt_col1, filt_col2 = st.columns(2)
+        with filt_col1:
+            selected_emp = st.selectbox("👤 Select Employee Profile:", unique_employees)
+        with filt_col2:
+            selected_month = st.selectbox("📅 Filter by Payroll Month:", unique_months)
+            
+        f_df = df[(df['employee_name'] == selected_emp) & (df['Month_Year'] == selected_month)].copy()
+        
+        st.markdown(f"## 📊 Breakdown for {selected_emp} during {selected_month}")
+        
+        # --- CALCULATE UNIQUE CALENDAR DAYS ---
+        total_days = f_df['work_date'].nunique()
+        payable_days = f_df[(f_df['Is Payable'] == True) & (f_df['location'] != "Holidays (Day off)")]['work_date'].nunique()
+        holiday_days = f_df[f_df['location'] == "Holidays (Day off)"]['work_date'].nunique()
+        excluded_days = max(0, total_days - payable_days - holiday_days)
+        
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric("📅 Total Unique Days Logged", f"{total_days} Days")
+        kpi2.metric("💰 Approved Payable Days", f"{payable_days} Days")
+        kpi3.metric("🏖️ Holidays / Days Off", f"{holiday_days} Days")
+        kpi4.metric("🛑 Excluded (Weekends / Holidays)", f"{excluded_days} Days")
+        
+        st.markdown("### Approved Payroll Summary Table (Site Distribution)")
+        summary_pivot = f_df.groupby('location').agg(
+            Days_Logged=('work_date', 'nunique')
+        ).reset_index()
+        summary_pivot.columns = ['UK Work Location Site / Status', 'Total Unique Days Worked']
+        st.dataframe(summary_pivot, use_container_width=True, hide_index=True)
+        
+        csv_data = f_df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download This Filtered Report to CSV", data=csv_data, file_name=f"Payroll_{selected_emp}_{selected_month.replace(' ', '_')}.csv", mime='text/csv', use_container_width=True)
+        
+        # --- RESTORED: START TIME & END TIME DISPLAYED WITHOUT SUMMED HOURS ---
+        with st.expander("🔍 In-Depth Shift Audit Log (Detailed Shifts Split)", expanded=True):
+            audit_display = f_df[['work_date', 'location', 'start_time', 'end_time', 'Day Categorization']].copy()
+            audit_display.columns = ['Calendar Date', 'Location Site / Status', 'Start Time', 'End Time', 'Payroll Classification']
+            st.dataframe(audit_display, use_container_width=True, hide_index=True)
+    else:
+        st.info("ℹ️ No entries have been submitted to the logs table yet.")
+
+
