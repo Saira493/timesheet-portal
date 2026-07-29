@@ -256,8 +256,8 @@ elif st.session_state.auth_status and st.session_state.current_role == "EMPLOYEE
             "BizAv Media Ltd", "Saks London", "Photocopiers Direct",
             "EVA International", "Fidelis College", "IQRA ELM", "Heretoga",
             "Tarbiya", "Clarity Housing", "Collfin", "Leicester Islamic Academy",
-            "Marathon School", "Suffah Primary School", "Vestro Marketing",
-            "Health Care", "SPC Coatings", "UIKAM", "HornsBy House"
+            "Marathon School", "Suffah Primary School", "HornsBy House", "Vestro Marketing",
+            "Health Care", "SPC Coatings", "UIKAM"
         ]
 
         tab1, tab2 = st.tabs(["🕐 Clock In / Clock Out", "📋 Manual Timesheet Entry"])
